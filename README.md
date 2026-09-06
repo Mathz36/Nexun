@@ -1,9 +1,19 @@
-# Nexun
+<p align="center">
+  <img src="docs/nexun-logo.svg" alt="Nexun - Automation Workspace" width="720" />
+</p>
+
+<p align="center">
+  <strong>Automação para validação, cruzamento e acompanhamento de relatórios.</strong>
+</p>
 
 O Nexun consulta relatórios no ERP, organiza os dados por fornecedor e ajuda a
 encontrar diferenças entre fontes. Hoje ele usa o `DbExplorerSP.executeQuery`,
 mas o restante da aplicação trabalha com um formato próprio e não depende dos
 detalhes da resposta do ERP.
+
+> **Nexun** é uma estação de trabalho para automações operacionais: as consultas
+> rodam no backend, os resultados ficam rastreáveis e os problemas chegam ao
+> responsável sem depender de conferência manual.
 
 ## Por que este projeto existe
 
