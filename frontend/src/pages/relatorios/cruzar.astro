@@ -1,0 +1,239 @@
+---
+import MainLayout from '../../layouts/MainLayout.astro';
+---
+
+<MainLayout title="Cruzar Relatórios" active="cruzar">
+  <div class="mx-auto w-full max-w-5xl space-y-6">
+    <div class="mb-1">
+      <p class="font-mono text-xs text-blue-600">// compare pipeline</p>
+      <p class="mt-1 text-sm text-slate-500">Confronte fontes e encontre diferenças antes que virem retrabalho.</p>
+    </div>
+    <div class="data-panel p-6">
+      <div class="grid grid-cols-3 gap-4 items-end">
+        <div class="col-span-1">
+          <label class="mb-1 block text-sm font-medium text-slate-700">Fornecedor</label>
+          <select
+            id="select-fornecedor"
+            class="field w-full border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            <option value="">Selecione…</option>
+          </select>
+        </div>
+        <div class="col-span-1">
+          <label class="mb-1 block text-sm font-medium text-slate-700">Tolerância monetária (R$)</label>
+          <input
+            id="input-tolerancia"
+            type="number"
+            step="0.01"
+            min="0"
+            value="0.01"
+            class="field w-full border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+        <div class="col-span-1">
+          <button
+            id="btn-cruzar"
+            disabled
+            class="command-button w-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cruzar relatórios
+          </button>
+        </div>
+      </div>
+
+      <div id="reports-checklist" class="mt-4 space-y-2"></div>
+    </div>
+
+    <div id="comparison-result"></div>
+  </div>
+</MainLayout>
+
+<script>
+  import { api } from '../../services/api';
+
+  function toast(message: string, type: 'success' | 'error' = 'success') {
+    window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }));
+  }
+
+  const selectFornecedor = document.getElementById('select-fornecedor') as HTMLSelectElement;
+  const checklist = document.getElementById('reports-checklist')!;
+  const btnCruzar = document.getElementById('btn-cruzar') as HTMLButtonElement;
+  const resultBox = document.getElementById('comparison-result')!;
+  const inputTolerancia = document.getElementById('input-tolerancia') as HTMLInputElement;
+
+  const currency = (v: number) =>
+    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const quantity = (v: number) => v.toLocaleString('pt-BR');
+
+  type StatusFilter = 'TODOS' | 'OK' | 'DIVERGENCIA' | 'AUSENTE';
+  let activeStatusFilter: StatusFilter = 'TODOS';
+
+  async function init() {
+    const reports = await api.reports.list();
+    const fornecedores = Array.from(new Set(reports.map((r) => r.fornecedor))).sort();
+    selectFornecedor.innerHTML =
+      `<option value="">Selecione…</option>` +
+      fornecedores.map((f) => `<option value="${f}">${f}</option>`).join('');
+  }
+
+  selectFornecedor.addEventListener('change', async () => {
+    resultBox.innerHTML = '';
+    btnCruzar.disabled = true;
+    const fornecedor = selectFornecedor.value;
+    if (!fornecedor) {
+      checklist.innerHTML = '';
+      return;
+    }
+
+    const reports = await api.comparisons.listReportsForSupplier(fornecedor);
+    if (reports.length < 2) {
+      checklist.innerHTML = `<p class="text-sm text-slate-500 pt-2">Este fornecedor possui apenas ${reports.length} relatório(s) — são necessários ao menos 2 para cruzar.</p>`;
+      return;
+    }
+
+    checklist.innerHTML = `
+      <p class="pt-2 text-sm font-medium text-slate-700">Selecione dois ou mais relatórios:</p>
+      <div class="space-y-1">
+        ${reports
+          .map(
+            (r) => `
+          <label class="report-option flex items-center gap-2 px-2 py-1.5 text-sm">
+            <input type="checkbox" value="${r.id}" data-report-checkbox class="rounded border-slate-300" />
+            ${r.nome} <span class="text-xs text-slate-400">(${r.tipo})</span>
+          </label>`,
+          )
+          .join('')}
+      </div>`;
+
+    checklist.querySelectorAll('[data-report-checkbox]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const checked = checklist.querySelectorAll('[data-report-checkbox]:checked');
+        btnCruzar.disabled = checked.length < 2;
+      });
+    });
+  });
+
+  btnCruzar.addEventListener('click', async () => {
+    const fornecedor = selectFornecedor.value;
+    const reportIds = Array.from(
+      checklist.querySelectorAll('[data-report-checkbox]:checked'),
+    ).map((el) => (el as HTMLInputElement).value);
+    const tolerancia = Number(inputTolerancia.value) || 0;
+
+    resultBox.innerHTML = `<p class="text-sm text-slate-500">Cruzando relatórios…</p>`;
+
+    try {
+      const result = await api.comparisons.create({ fornecedor, reportIds, tolerancia });
+      renderResult(result);
+      toast('Cruzamento concluído.');
+    } catch (err) {
+      resultBox.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">${(err as Error).message}</div>`;
+      toast((err as Error).message, 'error');
+    }
+  });
+
+  function renderResult(result: any) {
+    const relatorios = result.resumo.relatorios;
+    activeStatusFilter = 'TODOS';
+
+    resultBox.innerHTML = `
+      <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+        <div class="grid gap-3" style="grid-template-columns: repeat(${relatorios.length + 3}, minmax(0,1fr))">
+          ${relatorios
+            .map(
+              (r: any) => `
+            <div class="rounded-lg bg-slate-50 p-3 text-center">
+              <p class="text-xs text-slate-500">${r.reportName}</p>
+              <p class="text-lg font-semibold text-slate-900">${r.totalNotas}</p>
+              <p class="text-[10px] uppercase text-slate-400">notas</p>
+            </div>`,
+            )
+            .join('')}
+          <button type="button" data-status-filter="OK" class="status-filter rounded-lg bg-emerald-50 p-3 text-center transition hover:ring-2 hover:ring-emerald-300">
+            <p class="text-xs text-emerald-700">Coincidentes</p>
+            <p class="text-lg font-semibold text-emerald-800">${result.resumo.notasCoincidentes}</p>
+          </button>
+          <button type="button" data-status-filter="DIVERGENCIA" class="status-filter rounded-lg bg-amber-50 p-3 text-center transition hover:ring-2 hover:ring-amber-300">
+            <p class="text-xs text-amber-700">Divergentes</p>
+            <p class="text-lg font-semibold text-amber-800">${result.resumo.notasDivergentes}</p>
+          </button>
+          <button type="button" data-status-filter="AUSENTE" class="status-filter rounded-lg bg-red-50 p-3 text-center transition hover:ring-2 hover:ring-red-300">
+            <p class="text-xs text-red-700">Ausentes</p>
+            <p class="text-lg font-semibold text-red-800">${result.linhas.filter((l: any) => l.status === 'AUSENTE').length}</p>
+          </button>
+        </div>
+
+        <div class="comparison-table overflow-x-auto rounded-lg border">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+              <tr>
+                ${relatorios.map((r: any) => `<th class="border-l border-slate-200 px-3 py-2 text-center" colspan="5">${r.reportName}</th>`).join('')}
+                <th class="px-3 py-2" rowspan="2">Divergências</th>
+                <th class="px-3 py-2" rowspan="2">Status</th>
+              </tr>
+              <tr>
+                ${relatorios.map(() => `
+                  <th class="border-l border-slate-200 px-3 py-2">NF</th>
+                  <th class="px-3 py-2">Operação</th>
+                  <th class="border-l border-slate-200 px-3 py-2">Líquido</th>
+                  <th class="px-3 py-2">Bruto</th>
+                  <th class="px-3 py-2">Qtd.</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody id="comparison-rows" class="divide-y divide-slate-100">
+              ${renderRows(result.linhas)}
+            </tbody>
+          </table>
+        </div>
+        <p id="comparison-filter-label" class="text-xs text-slate-500"></p>
+      </div>`;
+
+    resultBox.querySelectorAll<HTMLButtonElement>('[data-status-filter]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const selected = button.dataset.statusFilter as Exclude<StatusFilter, 'TODOS'>;
+        activeStatusFilter = activeStatusFilter === selected ? 'TODOS' : selected;
+        const rows = result.linhas.filter((line: any) =>
+          activeStatusFilter === 'TODOS' || line.status === activeStatusFilter,
+        );
+        resultBox.querySelector('#comparison-rows')!.innerHTML = renderRows(rows);
+        const label = resultBox.querySelector('#comparison-filter-label')!;
+        label.textContent = activeStatusFilter === 'TODOS'
+          ? ''
+          : `Filtro ativo: ${activeStatusFilter === 'DIVERGENCIA' ? 'Divergentes' : activeStatusFilter === 'AUSENTE' ? 'Ausentes' : 'Coincidentes'} (${rows.length})`;
+        resultBox.querySelectorAll<HTMLButtonElement>('[data-status-filter]').forEach((item) => {
+          item.classList.toggle('ring-2', item.dataset.statusFilter === activeStatusFilter);
+        });
+      });
+    });
+  }
+
+  function renderRows(lines: any[]) {
+    return lines
+      .map(
+        (l: any) => `
+                <tr class="${l.status === 'AUSENTE' ? 'comparison-missing' : l.status === 'DIVERGENCIA' ? 'comparison-divergent' : ''}">
+                  ${l.valores
+                    .map(
+                      (v: any) => `
+                        <td class="border-l border-slate-100 px-3 py-2 font-mono">${v.nf ?? '<span class="text-slate-300">—</span>'}</td>
+                        <td class="px-3 py-2">${v.operacao ?? '<span class="text-slate-300">—</span>'}</td>
+                        <td class="border-l border-slate-100 px-3 py-2">${v.valorLiquido === null ? '<span class="text-slate-300">—</span>' : currency(v.valorLiquido)}</td>
+                        <td class="px-3 py-2">${v.valorBruto === null ? '<span class="text-slate-300">—</span>' : currency(v.valorBruto)}</td>
+                        <td class="px-3 py-2">${v.quantidade === null ? '<span class="text-slate-300">—</span>' : quantity(v.quantidade)}</td>`,
+                    )
+                    .join('')}
+                  <td class="px-3 py-2 text-xs text-slate-500">${l.divergencias.join(', ') || '—'}</td>
+                  <td class="px-3 py-2">${statusBadge(l.status)}</td>
+                </tr>`,
+      )
+      .join('') || '<tr><td colspan="99" class="px-3 py-6 text-center text-sm text-slate-500">Nenhum registro neste filtro.</td></tr>';
+  }
+
+  function statusBadge(status: string) {
+    const labels: Record<string, string> = { OK: '✓ OK', DIVERGENCIA: '⚠ Divergência', AUSENTE: '✕ Ausente' };
+    const chipClass = status === 'OK' ? 'status-chip-ok' : status === 'DIVERGENCIA' ? 'status-chip-divergence' : 'status-chip-missing';
+    return `<span class="status-chip ${chipClass}">${labels[status]}</span>`;
+  }
+
+  init();
+</script>

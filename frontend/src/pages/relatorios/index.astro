@@ -1,0 +1,140 @@
+---
+import MainLayout from '../../layouts/MainLayout.astro';
+---
+
+<MainLayout title="Relatórios" active="relatorios">
+  <div class="mb-6 flex items-end justify-between">
+    <div>
+      <p class="font-mono text-xs text-blue-600">// automation registry</p>
+      <p class="mt-1 text-sm text-slate-500">Queries que alimentam os fluxos de dados do workspace.</p>
+    </div>
+    <div class="flex gap-2">
+      <button
+        id="btn-execute-all"
+        class="command-button border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:border-blue-300 hover:text-blue-700"
+      >
+        Executar todos os ativos
+      </button>
+      <a
+        href="/relatorios/cadastrar"
+        class="command-button bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+      >
+        + Cadastrar relatório
+      </a>
+    </div>
+  </div>
+
+  <div class="data-panel">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Nome</th>
+          <th class="px-4 py-3">Fornecedor</th>
+          <th class="px-4 py-3">Tipo</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3 text-right">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="reports-tbody" class="divide-y divide-slate-100">
+        <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500">Carregando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</MainLayout>
+
+<script>
+  import { api } from '../../services/api';
+  import type { Report } from '../../../../shared/types/report-record';
+
+  function toast(message: string, type: 'success' | 'error' = 'success') {
+    window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }));
+  }
+
+  async function load() {
+    const tbody = document.getElementById('reports-tbody')!;
+    try {
+      const reports = await api.reports.list();
+      renderRows(reports);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-sm text-red-600">Erro ao carregar relatórios: ${(err as Error).message}</td></tr>`;
+    }
+  }
+
+  function renderRows(reports: Report[]) {
+    const tbody = document.getElementById('reports-tbody')!;
+    if (reports.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500">Nenhum relatório cadastrado ainda.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = reports
+      .map(
+        (r) => `
+      <tr class="hover:bg-slate-50" data-id="${r.id}">
+        <td class="px-4 py-3 font-medium text-slate-900">${r.nome}</td>
+        <td class="px-4 py-3">${r.fornecedor}</td>
+        <td class="px-4 py-3">${r.tipo}</td>
+        <td class="px-4 py-3">
+          <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${r.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
+            ${r.ativo ? 'Ativo' : 'Inativo'}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-right space-x-2">
+          <button data-action="edit" class="text-brand-600 hover:underline text-xs font-medium">Editar query</button>
+          <button data-action="execute" class="text-brand-600 hover:underline text-xs font-medium">Executar</button>
+          <button data-action="toggle" class="text-slate-600 hover:underline text-xs font-medium">${r.ativo ? 'Desativar' : 'Ativar'}</button>
+          <button data-action="delete" class="text-red-600 hover:underline text-xs font-medium">Excluir</button>
+        </td>
+      </tr>`,
+      )
+      .join('');
+
+    tbody.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        const row = (e.currentTarget as HTMLElement).closest('tr')!;
+        const id = row.dataset.id!;
+        const action = (e.currentTarget as HTMLElement).dataset.action;
+
+        try {
+          if (action === 'edit') {
+            window.location.href = `/relatorios/cadastrar?id=${encodeURIComponent(id)}`;
+            return;
+          } else if (action === 'execute') {
+            const result = await api.reports.execute(id);
+            toast(`Relatório executado: ${result.recordCount} registro(s).`);
+          } else if (action === 'delete') {
+            if (!confirm('Excluir este relatório? Esta ação não pode ser desfeita.')) return;
+            await api.reports.remove(id);
+            toast('Relatório excluído.');
+          } else if (action === 'toggle') {
+            const reports = await api.reports.list();
+            const current = reports.find((r) => r.id === id)!;
+            await api.reports.update(id, { ativo: !current.ativo });
+            toast('Status atualizado.');
+          }
+          await load();
+        } catch (err) {
+          toast((err as Error).message, 'error');
+        }
+      });
+    });
+  }
+
+  document.getElementById('btn-execute-all')!.addEventListener('click', async () => {
+    try {
+      const results = await api.reports.executeAll();
+      const errors = results.filter((r) => r.error);
+      toast(
+        errors.length === 0
+          ? `${results.length} relatório(s) executado(s) com sucesso.`
+          : `${results.length - errors.length} executado(s), ${errors.length} com erro.`,
+        errors.length === 0 ? 'success' : 'error',
+      );
+      await load();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  });
+
+  load();
+</script>

@@ -1,0 +1,153 @@
+---
+import MainLayout from '../layouts/MainLayout.astro';
+---
+
+<MainLayout title="Dashboard" active="dashboard">
+  <div id="dashboard-root" class="space-y-7">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="font-mono text-xs text-blue-600">// runtime overview</p>
+        <p class="mt-1 text-sm text-slate-500">Acompanhe suas automações e os dados processados.</p>
+      </div>
+      <span class="hidden rounded-md border border-slate-200 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-500 md:block">LIVE / SYNC</span>
+    </div>
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" id="metrics-grid">
+      <p class="col-span-full text-sm text-slate-500">Carregando dashboard…</p>
+    </div>
+
+    <section>
+      <h2 class="section-label mb-3">
+        Divergências
+      </h2>
+      <div id="alerts-list" class="space-y-2"></div>
+    </section>
+
+    <section>
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="section-label">Fornecedores</h2>
+        <div class="flex gap-2">
+          <input
+            id="filter-fornecedor"
+            type="text"
+            placeholder="Filtrar por fornecedor…"
+            class="field w-56 border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+      </div>
+      <div class="data-panel overflow-hidden">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-4 py-3">Fornecedor</th>
+              <th class="px-4 py-3">Venda Líquida</th>
+              <th class="px-4 py-3">Venda Bruta</th>
+              <th class="px-4 py-3">Dev. Vendas</th>
+              <th class="px-4 py-3">Bonificação</th>
+              <th class="px-4 py-3">Notas</th>
+              <th class="px-4 py-3">Quantidade</th>
+              <th class="px-4 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody id="suppliers-tbody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</MainLayout>
+
+<script>
+  import { api } from '../services/api';
+
+  const currency = (v: number) =>
+    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const statusBadge = (status: string) => {
+    const labels: Record<string, string> = {
+      OK: '✓ Conferido',
+      DIVERGENCIA: '⚠ Divergência',
+      SEM_COMPARACAO: '— Sem comparação',
+    };
+    const chipClass = status === 'OK' ? 'status-chip-ok' : status === 'DIVERGENCIA' ? 'status-chip-divergence' : 'status-chip-missing';
+    return `<span class="status-chip ${chipClass}">${labels[status] ?? status}</span>`;
+  };
+
+  async function loadDashboard() {
+    try {
+      const data = (await api.dashboard.get()) as any;
+
+      const metricsGrid = document.getElementById('metrics-grid')!;
+      metricsGrid.innerHTML = `
+        ${metric('Fornecedores', String(data.totais.totalFornecedores))}
+        ${metric('Total de Notas', String(data.totais.totalNotas))}
+        ${metric('Quantidade', String(data.totais.totalQuantidade))}
+        ${metric('Valor Líquido', currency(data.totais.valorLiquido))}
+        ${metric('Valor Bruto', currency(data.totais.valorBruto))}
+        ${metric('Com Divergência', String(data.totais.fornecedoresComDivergencia), true)}
+      `;
+
+      const alertsList = document.getElementById('alerts-list')!;
+      const comDivergencia = data.fornecedores.filter((f: any) => f.alerta.status === 'DIVERGENCIA');
+      alertsList.innerHTML =
+        comDivergencia.length === 0
+          ? `<p class="text-sm text-slate-500">Nenhuma divergência encontrada. ✓</p>`
+          : comDivergencia
+              .map(
+                (f: any) => `
+              <a href="/fornecedores/detalhe?fornecedor=${encodeURIComponent(f.fornecedor)}"
+                 class="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm hover:bg-amber-100 transition-colors">
+                <span class="font-medium text-amber-900">⚠ ${f.fornecedor}</span>
+                <span class="text-amber-700">${f.alerta.totalDivergencias} divergência(s) · ${f.alerta.notasAusentes} ausente(s)</span>
+              </a>`,
+              )
+              .join('');
+
+      const tbody = document.getElementById('suppliers-tbody')!;
+      renderSuppliers(data.fornecedores);
+
+      const filterInput = document.getElementById('filter-fornecedor') as HTMLInputElement;
+      filterInput.addEventListener('input', () => {
+        const term = filterInput.value.trim().toUpperCase();
+        const filtered = data.fornecedores.filter((f: any) =>
+          f.fornecedor.toUpperCase().includes(term),
+        );
+        renderSuppliers(filtered);
+      });
+
+      function renderSuppliers(list: any[]) {
+        tbody.innerHTML =
+          list.length === 0
+            ? `<tr><td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">Nenhum fornecedor encontrado.</td></tr>`
+            : list
+                .map(
+                  (f: any) => `
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 font-medium">
+                  <a href="/fornecedores/detalhe?fornecedor=${encodeURIComponent(f.fornecedor)}" class="text-brand-600 hover:underline">${f.fornecedor}</a>
+                </td>
+                <td class="px-4 py-3">${currency(f.vendaLiquida)}</td>
+                <td class="px-4 py-3">${currency(f.vendaBruta)}</td>
+                <td class="px-4 py-3">${currency(f.devVenda)}</td>
+                <td class="px-4 py-3">${currency(f.bonificacao)}</td>
+                <td class="px-4 py-3">${f.totalNotas}</td>
+                <td class="px-4 py-3">${f.quantidade}</td>
+                <td class="px-4 py-3">${statusBadge(f.alerta.status)}</td>
+              </tr>`,
+                )
+                .join('');
+      }
+    } catch (err) {
+      document.getElementById('metrics-grid')!.innerHTML =
+        `<p class="col-span-full text-sm text-red-600">Erro ao carregar dashboard: ${(err as Error).message}</p>`;
+    }
+  }
+
+  function metric(label: string, value: string, warning = false) {
+    return `
+      <div class="metric-card rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${label}</p>
+        <p class="mt-2 text-2xl font-semibold ${warning ? 'text-amber-600' : 'text-slate-900'}">${value}</p>
+      </div>`;
+  }
+
+  loadDashboard();
+</script>

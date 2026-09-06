@@ -1,0 +1,222 @@
+---
+import MainLayout from '../../layouts/MainLayout.astro';
+
+// Página estática: o fornecedor é lido via query string (?fornecedor=ENVU)
+// no client, e não como parâmetro de rota — evita a necessidade de um
+// adapter SSR só para uma tela cujo conjunto de fornecedores é dinâmico
+// (definido pelos relatórios cadastrados pelo próprio usuário).
+---
+
+<MainLayout title="Detalhe do Fornecedor" active="dashboard">
+  <div class="space-y-6">
+    <a href="/" class="text-sm text-brand-600 hover:underline">&larr; Voltar ao Dashboard</a>
+
+    <div id="supplier-summary" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <p class="text-sm text-slate-500">Carregando…</p>
+    </div>
+
+    <section>
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Resumo por Operação
+      </h2>
+      <div id="operations-grid" class="grid grid-cols-2 gap-4 md:grid-cols-4"></div>
+    </section>
+
+    <section>
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Relatórios deste fornecedor
+      </h2>
+      <div id="reports-list" class="space-y-2"></div>
+    </section>
+
+    <section>
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Comparativo de divergências
+      </h2>
+      <div id="comparison-table" class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"></div>
+    </section>
+  </div>
+</MainLayout>
+
+<script>
+  import { api } from '../../services/api';
+
+  const fornecedor = new URLSearchParams(window.location.search).get('fornecedor') ?? '';
+
+  const currency = (v: number) =>
+    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  async function load() {
+    if (!fornecedor) {
+      document.getElementById('supplier-summary')!.innerHTML =
+        `<p class="text-sm text-red-600">Nenhum fornecedor informado na URL (?fornecedor=NOME).</p>`;
+      return;
+    }
+
+    try {
+      const supplier = (await api.dashboard.getSupplier(fornecedor)) as any;
+
+      document.getElementById('supplier-summary')!.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-500">Fornecedor</p>
+            <p class="text-2xl font-semibold text-slate-900">${supplier.fornecedor}</p>
+          </div>
+          ${alertBlock(supplier.alerta)}
+        </div>`;
+
+      const opsGrid = document.getElementById('operations-grid')!;
+      opsGrid.innerHTML = supplier.operacoes.length
+        ? supplier.operacoes
+            .map(
+              (op: any) => `
+          <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p class="text-sm font-semibold text-slate-800">${op.operacao}</p>
+            <dl class="mt-2 space-y-1 text-xs text-slate-500">
+              <div class="flex justify-between"><dt>Vlr Líquido</dt><dd class="font-medium text-slate-800">${currency(op.valorLiquido)}</dd></div>
+              <div class="flex justify-between"><dt>Vlr Bruto</dt><dd class="font-medium text-slate-800">${currency(op.valorBruto)}</dd></div>
+              <div class="flex justify-between"><dt>Quantidade</dt><dd class="font-medium text-slate-800">${op.quantidade}</dd></div>
+              <div class="flex justify-between"><dt>Nº de NFs</dt><dd class="font-medium text-slate-800">${op.quantidadeNF}</dd></div>
+            </dl>
+          </div>`,
+            )
+            .join('')
+        : `<p class="col-span-full text-sm text-slate-500">Nenhum registro encontrado. Execute o relatório primeiro.</p>`;
+
+      document.getElementById('reports-list')!.innerHTML = supplier.relatorios
+        .map(
+          (r: any) => `
+        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+          <span class="font-medium text-slate-800">${r.nome} <span class="text-xs text-slate-400">(${r.tipo})</span></span>
+          <span class="text-slate-500">${r.totalRegistros} registro(s)</span>
+        </div>`,
+        )
+        .join('');
+
+      const comparison = await api.dashboard.getSupplierComparison(fornecedor);
+      renderComparison(comparison);
+    } catch (err) {
+      document.getElementById('supplier-summary')!.innerHTML = `<p class="text-sm text-red-600">Erro: ${(err as Error).message}</p>`;
+    }
+  }
+
+  function renderComparison(comparison: any) {
+    const container = document.getElementById('comparison-table')!;
+    if (!comparison || comparison.resumo.relatorios.length < 2) {
+      container.innerHTML = '<p class="p-4 text-sm text-slate-500">Não há dois relatórios para comparar.</p>';
+      return;
+    }
+
+    const reports = comparison.resumo.relatorios;
+    const lines = comparison.linhas.filter((line: any) => line.status !== 'OK');
+    container.innerHTML = `
+      <div class="border-b border-slate-200 p-4">
+        <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Resumo comparativo</h3>
+        ${renderComparisonSummary(comparison)}
+      </div>
+      <table class="comparison-table min-w-full divide-y divide-slate-200 text-sm">
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+          <tr>
+            ${reports.map((report: any) => `<th colspan="4" class="border-l border-slate-200 px-3 py-2 text-center">${report.reportName}</th>`).join('')}
+            <th rowspan="2" class="px-3 py-2">Motivo</th>
+            <th rowspan="2" class="px-3 py-2">Status</th>
+          </tr>
+          <tr>
+            ${reports.map(() => `
+              <th class="border-l border-slate-200 px-3 py-2">NF</th>
+              <th class="px-3 py-2">Operação</th>
+              <th class="px-3 py-2">Líquido</th>
+              <th class="px-3 py-2">Bruto</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          ${lines.length ? lines.map((line: any) => `
+            <tr class="${line.status === 'AUSENTE' ? 'comparison-missing' : 'comparison-divergent'}">
+              ${line.valores.map((value: any) => `
+                <td class="border-l border-slate-100 px-3 py-2 font-mono">${value.nf ?? '—'}</td>
+                <td class="px-3 py-2">${value.operacao ?? '—'}</td>
+                <td class="px-3 py-2">${value.valorLiquido === null ? '—' : currency(value.valorLiquido)}</td>
+                <td class="px-3 py-2">${value.valorBruto === null ? '—' : currency(value.valorBruto)}</td>`).join('')}
+              <td class="px-3 py-2 text-xs text-slate-500">${line.divergencias.join(', ')}</td>
+              <td class="px-3 py-2 font-medium ${line.status === 'AUSENTE' ? 'text-red-700' : 'text-amber-700'}">${line.status === 'AUSENTE' ? 'Ausente' : 'Divergente'}</td>
+            </tr>`).join('') : '<tr><td colspan="99" class="px-3 py-6 text-center text-sm text-emerald-700">Nenhuma divergência ou nota ausente.</td></tr>'}
+        </tbody>
+      </table>`;
+  }
+
+  function renderComparisonSummary(comparison: any) {
+    const reports = comparison.resumo.relatorios;
+    const byOperation = new Map<string, any[]>();
+
+    comparison.linhas.forEach((line: any) => {
+      const operation = line.operacao || line.valores.find((value: any) => value.operacao)?.operacao || 'Sem operação';
+      const current = byOperation.get(operation) ?? reports.map(() => ({
+        liquido: 0,
+        bruto: 0,
+        quantidade: 0,
+        notas: 0,
+      }));
+
+      line.valores.forEach((value: any, index: number) => {
+        if (value.nf === null) return;
+        current[index].liquido += value.valorLiquido ?? 0;
+        current[index].bruto += value.valorBruto ?? 0;
+        current[index].quantidade += value.quantidade ?? 0;
+        current[index].notas += 1;
+      });
+      byOperation.set(operation, current);
+    });
+
+    return `
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="min-w-full divide-y divide-slate-200 text-xs">
+          <thead class="bg-slate-50 text-left font-semibold uppercase text-slate-500">
+            <tr>
+              <th class="px-3 py-2">Operação</th>
+              ${reports.map((report: any) => `<th colspan="4" class="border-l border-slate-200 px-3 py-2 text-center">${report.reportName}</th>`).join('')}
+            </tr>
+            <tr>
+              <th class="px-3 py-2"></th>
+              ${reports.map(() => `
+                <th class="border-l border-slate-200 px-3 py-2">Líquido</th>
+                <th class="px-3 py-2">Bruto</th>
+                <th class="px-3 py-2">Qtd.</th>
+                <th class="px-3 py-2">Notas</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${Array.from(byOperation.entries()).map(([operation, values]) => `
+              <tr>
+                <td class="px-3 py-2 font-medium text-slate-700">${operation}</td>
+                ${values.map((value: any) => `
+                  <td class="border-l border-slate-100 px-3 py-2">${currency(value.liquido)}</td>
+                  <td class="px-3 py-2">${currency(value.bruto)}</td>
+                  <td class="px-3 py-2">${value.quantidade.toLocaleString('pt-BR')}</td>
+                  <td class="px-3 py-2">${value.notas}</td>`).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function alertBlock(alerta: any) {
+    if (alerta.status === 'SEM_COMPARACAO') {
+      return `<div class="text-right">
+        <p class="text-sm text-slate-500">— Sem comparação</p>
+        <p class="text-xs text-slate-400">Apenas um relatório cadastrado.</p>
+      </div>`;
+    }
+    if (alerta.status === 'OK') {
+      return `<div class="text-right">
+        <p class="text-sm font-medium text-emerald-700">✓ Relatórios conferidos</p>
+        <p class="text-xs text-emerald-600">Todos os registros estão consistentes.</p>
+      </div>`;
+    }
+    return `<div class="text-right">
+      <a href="/relatorios/cruzar" class="text-sm font-medium text-amber-700 hover:underline">⚠ Divergência encontrada</a>
+      <p class="text-xs text-amber-600">${alerta.totalDivergencias} nota(s) divergente(s) · ${alerta.notasAusentes} ausente(s) · ${currency(alerta.diferencaTotalValor)} em diferenças</p>
+    </div>`;
+  }
+
+  load();
+</script>

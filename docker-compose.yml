@@ -1,0 +1,27 @@
+version: '3.9'
+
+# Sem serviço de banco de dados: o backend persiste em arquivos JSON
+# (./backend/data), montados como volume para persistir entre reinícios.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - '3026:3026'
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend/data:/app/backend/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - '3027:3027'
+    environment:
+      - BACKEND_URL=http://backend:3026
+    depends_on:
+      - backend
