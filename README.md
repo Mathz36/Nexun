@@ -1,13 +1,30 @@
-# Nexun — Consolidação, Análise e Auditoria de Relatórios
+# Nexun
 
-Plataforma web para consultar dados do ERP configurado (via `DbExplorerSP.executeQuery`),
-consolidar vendas por fornecedor/operação e **cruzar múltiplos relatórios do mesmo
-fornecedor** para detectar divergências de valores e notas ausentes — sem exigir
-alteração de código para novos fornecedores ou relatórios.
+O Nexun consulta relatórios no ERP, organiza os dados por fornecedor e ajuda a
+encontrar diferenças entre fontes. Hoje ele usa o `DbExplorerSP.executeQuery`,
+mas o restante da aplicação trabalha com um formato próprio e não depende dos
+detalhes da resposta do ERP.
+
+## Por que este projeto existe
+
+No início de cada mês, a equipe precisa validar as vendas de cada laboratório
+antes de enviar o fechamento mensal. Para isso, os valores enviados diariamente
+são comparados com outros relatórios internos. Antes do Nexun, esse trabalho
+envolvia exportar os arquivos, cruzar os dados manualmente e procurar as
+divergências linha a linha.
+
+O Nexun automatiza esse processo: executa as consultas, cruza os relatórios,
+identifica as notas com diferença ou ausência e envia um alerta por e-mail. Com
+isso, o colaborador consegue ir direto ao problema, corrigir o que for
+necessário e encaminhar o fechamento com mais segurança.
+
+Na prática, a automação economiza cerca de quatro horas em um dia de trabalho
+de nove horas. O tempo que antes era gasto preparando e conferindo arquivos
+fica disponível para tratar as exceções e concluir o fechamento.
 
 ## Sumário
 
-- [Descrição](#descrição)
+- [Por que este projeto existe](#por-que-este-projeto-existe)
 - [Stack](#stack)
 - [Arquitetura](#arquitetura)
 - [Pré-requisitos](#pré-requisitos)
@@ -23,38 +40,31 @@ alteração de código para novos fornecedores ou relatórios.
 - [Como realizar um cruzamento](#como-realizar-um-cruzamento)
 - [Sincronização agendada](#sincronização-agendada)
 - [Testes](#testes)
-- [Troubleshooting](#troubleshooting)
+- [Problemas comuns](#problemas-comuns)
 
-## Descrição
+## O que ele faz
 
-O sistema permite:
+- Cadastra e testa queries SQL.
+- Executa relatórios manualmente ou em lote.
+- Normaliza os dados retornados pelo ERP.
+- Mostra totais por fornecedor e operação.
+- Compara dois ou mais relatórios nota a nota.
+- Aponta notas ausentes e diferenças de valor líquido ou quantidade.
+- Sincroniza os relatórios em um intervalo ou em uma data mensal.
+- Envia alertas por e-mail quando encontra problemas.
 
-- cadastrar **relatórios** (queries SQL executadas via DbExplorer da Sankhya);
-- validar que cada query retorna as colunas obrigatórias (`FORNECEDOR`, `OPERACAO`,
-  `NF`, `VLR_LIQUIDO`, `QUANTIDADE` e, opcionalmente, `VLR_BRUTO`) antes de permitir salvá-la;
-- executar relatórios (individualmente ou todos os ativos de uma vez) e normalizar
-  o resultado para um modelo interno (`ReportRecord`) independente do formato bruto
-  da Sankhya;
-- consolidar valores por fornecedor e por operação em um Dashboard;
-- **cruzar dois ou mais relatórios do mesmo fornecedor**, comparando nota a nota
-  (chave = `FORNECEDOR + NF + OPERACAO`) o valor líquido, valor bruto e quantidade,
-  com tolerância monetária configurável, sinalizando divergências e notas ausentes;
-- gerar alertas automáticos no Dashboard sempre que um fornecedor tiver mais de um
-  relatório e os resultados divergirem.
-
-Nenhuma lógica é hardcoded para um fornecedor ou relatório específico — o sistema
-detecta fornecedores, relatórios e operações dinamicamente a partir dos dados.
+Para salvar uma query, ela precisa retornar `FORNECEDOR`, `OPERACAO`, `NF`,
+`VLR_LIQUIDO` e `QUANTIDADE`. `VLR_BRUTO` é opcional e serve apenas para
+exibição; a comparação de valores usa sempre o líquido.
 
 ## Stack
 
 **Backend:** Node.js, Express, TypeScript, Zod, Axios.
 **Frontend:** Astro, TypeScript, Tailwind CSS (build estático, sem framework de UI).
-**Armazenamento:** **arquivos JSON** (decisão deste projeto — sem banco relacional).
-Cada escrita sobrescreve o arquivo inteiro, com gravação atômica (arquivo
-temporário + rename) para nunca corromper os dados em caso de falha no meio da
-escrita.
+**Armazenamento:** arquivos JSON, sem banco relacional. Cada gravação é feita
+em um arquivo temporário e depois renomeada, para evitar arquivos incompletos.
 
-## Arquitetura
+## Estrutura
 
 ```
 /
@@ -82,15 +92,15 @@ escrita.
 └── package.json                # npm workspaces (backend + frontend)
 ```
 
-Fluxo de dados:
+O fluxo principal é simples:
 
 ```
 Controller → Service → Repository (JSON)
 Service → Sankhya Integration → API Sankhya
 ```
 
-O frontend **nunca** chama a Sankhya diretamente — apenas a API própria do backend
-(`/api/...`), que mantém as credenciais Sankhya exclusivamente no servidor.
+O frontend chama apenas a API do backend. As credenciais e a comunicação com o
+ERP ficam no servidor.
 
 ## Pré-requisitos
 
@@ -99,13 +109,10 @@ O frontend **nunca** chama a Sankhya diretamente — apenas a API própria do ba
 
 ## Instalação
 
-Este projeto usa **npm workspaces** (raiz + `backend/` + `frontend/`) — isso é
-necessário para que `shared/` resolva dependências como `zod` corretamente
-(a resolução de módulos do Node sobe por diretórios ancestrais, e o workspace
-faz o hoisting do `node_modules` para a raiz, ancestral comum de `backend/` e
-`shared/`).
+O projeto usa npm workspaces. Instale as dependências na raiz para que backend,
+frontend e `shared/` usem a mesma instalação.
 
-```bash
+```powershell
 # na raiz do projeto
 npm install
 ```
@@ -126,24 +133,19 @@ CLIENT_ID=
 CLIENT_SECRET=
 GRANT_TYPE=client_credentials
 
-PORT=3026
+PORT=3036
 DATA_DIR=./data
 ```
 
-> ⚠️ **`SANKHYA_X_TOKEN`, `CLIENT_ID` e `CLIENT_SECRET` nunca são expostos ao
+> **`SANKHYA_X_TOKEN`, `CLIENT_ID` e `CLIENT_SECRET` nunca são expostos ao
 > frontend.** Eles só existem no processo do backend (`process.env`), nunca em
 > uma resposta HTTP, log, ou arquivo versionado. `.env` está no `.gitignore`.
 
-### ⚠️ Formato da integração Sankhya pendente de confirmação
+### Sobre a integração com o ERP
 
-Este projeto implementa a integração Sankhya (`SankhyaAuthService`,
-`SankhyaClient`, `SankhyaDbExplorerService`, `SankhyaAdapter`) com base no
-formato usualmente documentado do `DbExplorerSP.executeQuery` e do endpoint de
-autenticação — mas **alguns detalhes exatos (nome de campos do payload, se o
-X-Token vai em header customizado ou dentro do corpo, o TTL real do token,
-etc.) estão marcados no código com o comentário `CONFIRMAR COM DOC OFICIAL`** e
-precisam ser validados contra a documentação oficial da Sankhya ou uma chamada
-de exemplo antes de ir para produção. Os arquivos afetados:
+Os detalhes do payload e da autenticação estão isolados nestes arquivos. Eles
+devem ser conferidos com a documentação e com uma chamada real antes de usar a
+integração em produção:
 
 - `backend/src/integrations/sankhya/SankhyaAuthService.ts`
 - `backend/src/integrations/sankhya/SankhyaClient.ts`
@@ -152,8 +154,8 @@ de exemplo antes de ir para produção. Os arquivos afetados:
 
 ## Armazenamento de dados
 
-**Não há banco de dados relacional.** Os dados vivem em arquivos JSON dentro de
-`backend/data/` (caminho configurável via `DATA_DIR`):
+Os dados ficam em arquivos JSON dentro de `backend/data/` (ou no diretório
+definido por `DATA_DIR`):
 
 | Arquivo             | Conteúdo                                   |
 |----------------------|---------------------------------------------|
@@ -162,30 +164,26 @@ de exemplo antes de ir para produção. Os arquivos afetados:
 | `records.json`       | Registros normalizados de cada execução    |
 | `comparisons.json`   | Resultados de cruzamentos persistidos       |
 
-A cada escrita, o arquivo correspondente é **sobrescrito por completo** — nunca
-há patch parcial em disco. Para evitar corrupção em caso de falha no meio da
-escrita, o conteúdo é gravado primeiro em um arquivo temporário e só então
-renomeado por cima do arquivo final (operação atômica no mesmo filesystem).
-Essa lógica está isolada em `backend/src/repositories/JsonRepository.ts` —
-trocar por um banco relacional no futuro não exige alterar nenhuma regra de
-negócio, apenas essa camada.
+As escritas substituem o arquivo inteiro e usam um arquivo temporário antes da
+renomeação. Essa lógica fica em `backend/src/repositories/JsonRepository.ts`.
 
 ## Execução em desenvolvimento
 
-Em dois terminais:
+Na raiz do projeto, abra dois terminais:
 
 ```bash
-# terminal 1 — backend (porta 3026)
+# terminal 1 — backend (exemplo: porta 3036)
 npm run dev:backend
 
-# terminal 2 — frontend (porta 3027)
-npm run dev:frontend
+# terminal 2 — frontend (exemplo: porta 3037)
+$env:BACKEND_URL = "http://localhost:3036"
+npm run dev:frontend -- --port 3037
 ```
 
-O dev server do Astro faz proxy de `/api/*` para `http://localhost:3026`
+O dev server do Astro faz proxy de `/api/*` para `http://localhost:3036`
 (configurável via `BACKEND_URL`).
 
-## Build de produção
+## Produção
 
 ```bash
 npm run build:backend   # gera backend/dist
@@ -239,8 +237,7 @@ GET    /api/health
 GET    /api/health/sankhya
 ```
 
-Todas as entradas são validadas com **Zod** (`backend/src/middlewares/validate.ts`)
-— o backend nunca confia diretamente em dados vindos do frontend.
+As entradas da API são validadas com Zod em `backend/src/middlewares/validate.ts`.
 
 ## Integração Sankhya
 
@@ -258,16 +255,12 @@ Isolada em `backend/src/integrations/sankhya/`:
 
 ## Cadastro de relatórios
 
-Tela **Relatórios → Cadastrar**:
+Na tela **Relatórios → Cadastrar**:
 
-1. Preencha nome, fornecedor, tipo e a query SQL.
-2. Clique em **Testar Query** — o backend executa a query real no DbExplorer,
-   identifica as colunas retornadas e valida contra o contrato obrigatório
-  (`FORNECEDOR`, `OPERACAO`, `NF`, `VLR_LIQUIDO`, `QUANTIDADE`; `VLR_BRUTO` é opcional).
-3. Se alguma coluna obrigatória faltar, o sistema informa exatamente qual
-   (`REPORT_INVALID_SCHEMA`) e **não permite salvar**.
-4. Se válida, uma prévia dos registros normalizados é exibida e o botão
-   **Salvar relatório** é liberado.
+1. Preencha nome, fornecedor, tipo e query SQL.
+2. Clique em **Testar Query** para executar a query e validar as colunas.
+3. Corrija o que for apontado pelo sistema, se necessário.
+4. Salve o relatório depois que o teste passar.
 
 ## Como executar uma query
 
@@ -287,32 +280,26 @@ Tela **Relatórios → Cruzar Relatórios**:
 3. (Opcional) ajuste a tolerância monetária.
 4. Clique em **Cruzar relatórios**.
 
-O backend (`ComparisonService`) usa `FORNECEDOR + NF + OPERACAO` como chave e
-compara `VLR_LIQUIDO`, `VLR_BRUTO` e `QUANTIDADE` entre todas as fontes
-selecionadas (suporta 2 ou mais relatórios simultaneamente), classificando cada
-nota como `OK`, `DIVERGENCIA` ou `AUSENTE`, com o(s) tipo(s) de divergência
-específico(s) (`VALOR_LIQUIDO_DIVERGENTE`, `VALOR_BRUTO_DIVERGENTE`,
-`QUANTIDADE_DIVERGENTE`, `NOTA_AUSENTE_RELATORIO_A/B`).
+O cruzamento usa `FORNECEDOR + NF + OPERACAO` como chave. O valor líquido e a
+quantidade são comparados entre as fontes; o bruto, quando existir, é mostrado
+apenas como informação. Cada nota recebe um status: `OK`, `DIVERGENCIA` ou
+`AUSENTE`.
 
 ## Sincronização agendada
 
-Em **Configurações**, é possível ativar a sincronização automática e
-selecionar um intervalo entre 5 minutos e 24 horas ou o modo **Mensal**, com dia
-do mês e horário específicos (por exemplo, dia 2 às 08:00). O backend executa,
-de forma sequencial, as queries de todos os relatórios ativos, persiste uma nova execução
-e seus registros normalizados; o Dashboard passa a usar esses registros na
-próxima consulta.
+Em **Configurações**, ative a sincronização e escolha um intervalo ou o modo
+**Mensal**, com dia e horário definidos. O backend executa as queries dos
+relatórios ativos em sequência e salva os novos registros. O Dashboard usa os
+dados da última execução.
 
-Também é possível usar **Sincronizar agora** para executar o mesmo fluxo
-imediatamente. Apenas uma sincronização pode ocorrer por vez. A configuração e
-o histórico da última execução ficam em `backend/data/sync-schedule.json`.
+**Sincronizar agora** executa o mesmo fluxo imediatamente. Apenas uma execução
+pode ocorrer por vez. A configuração fica em `backend/data/sync-schedule.json`.
 
 ### Alertas por e-mail
 
-Em **Configurações → Alertas por e-mail**, informe o endereço que
-enviará as mensagens, o endereço que receberá os alertas e a senha do remetente.
-O envio ocorre depois de cada sincronização quando houver divergências ou notas
-ausentes. A senha nunca é retornada para o frontend nem escrita em logs.
+Em **Configurações → Alertas por e-mail**, informe o remetente, o destinatário e
+a senha do remetente. O alerta é enviado depois da sincronização quando houver
+divergências ou notas ausentes. A senha não aparece no frontend nem nos logs.
 
 Configure o servidor SMTP no `backend/.env`:
 
@@ -322,9 +309,9 @@ SMTP_PORT=587
 SMTP_SECURE=false
 ```
 
-Use **Testar SMTP** antes de ativar o alerta. O e-mail informa os fornecedores
-afetados, notas divergentes, notas ausentes e a diferença de valor líquido no
-momento da sincronização.
+Use **Testar SMTP** antes de ativar o alerta. A mensagem enviada traz os
+fornecedores afetados, as notas divergentes, as notas ausentes e a diferença de
+valor líquido encontrada na execução.
 
 O envio imediato usa os últimos dados sincronizados e está disponível em
 **Enviar alerta agora**. O resultado de cruzamentos manuais é persistido
@@ -337,7 +324,7 @@ cd backend
 npm test
 ```
 
-Cobre (via Vitest):
+Cobre, via Vitest:
 
 - **Normalização** — colunas obrigatórias ausentes, conversão de string
   numérica BR/US, `null`/vazio → zero, NF como string com zeros à esquerda.
@@ -346,12 +333,12 @@ Cobre (via Vitest):
   tolerância monetária configurável,
   e cruzamento com 3+ relatórios simultâneos.
 
-## Troubleshooting
+## Problemas comuns
 
 | Sintoma | Causa provável |
 |---|---|
 | `Variável de ambiente obrigatória ausente: SANKHYA_API_URL` | `backend/.env` não foi criado a partir de `.env.example`. |
-| `SANKHYA_AUTH_ERROR` | Credenciais inválidas ou endpoint/formato de autenticação incorreto — revisar `SankhyaAuthService.ts`. |
-| `SANKHYA_INVALID_RESPONSE` | O formato de resposta do DbExplorer não bate com o esperado em `SankhyaAdapter.ts` — confirmar com a documentação oficial. |
-| `REPORT_INVALID_SCHEMA` ao testar/salvar | A query não retorna todas as colunas obrigatórias (comparação é case/acento-insensitive). |
+| `SANKHYA_AUTH_ERROR` | Confira as credenciais e a URL de autenticação. |
+| `SANKHYA_INVALID_RESPONSE` | Confira o formato retornado pelo DbExplorer e o adapter. |
+| `REPORT_INVALID_SCHEMA` ao testar/salvar | A query não retorna `FORNECEDOR`, `OPERACAO`, `NF`, `VLR_LIQUIDO` ou `QUANTIDADE`. |
 | `Cannot find module 'zod'` ao rodar `tsc` em `shared/` | Rode `npm install` **na raiz** do projeto (não dentro de `backend/`), para o workspace fazer o hoisting do `node_modules`. |
