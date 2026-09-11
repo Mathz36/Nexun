@@ -3,15 +3,15 @@ import MainLayout from '../layouts/MainLayout.astro';
 ---
 
 <MainLayout title="Dashboard" active="dashboard">
-  <div id="dashboard-root" class="space-y-7">
-    <div class="flex items-end justify-between">
+  <div id="dashboard-root" class="space-y-6 sm:space-y-7">
+    <div class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <p class="font-mono text-xs text-blue-600">// runtime overview</p>
-        <p class="mt-1 text-sm text-slate-500">Acompanhe suas automações e os dados processados.</p>
+        <p class="font-mono text-[clamp(0.68rem,0.7vw+0.52rem,0.75rem)] text-blue-600">// runtime overview</p>
+        <p class="mt-1 text-[clamp(0.78rem,0.8vw+0.66rem,0.92rem)] text-slate-500">Acompanhe suas automações e os dados processados.</p>
       </div>
-      <span class="hidden rounded-md border border-slate-200 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-500 md:block">LIVE / SYNC</span>
+      <span class="hidden rounded-md border border-slate-200 bg-white px-3 py-1.5 font-mono text-[clamp(0.62rem,0.5vw+0.46rem,0.72rem)] text-slate-500 md:block">LIVE / SYNC</span>
     </div>
-    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" id="metrics-grid">
+    <div class="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-6" id="metrics-grid">
       <p class="col-span-full text-sm text-slate-500">Carregando dashboard…</p>
     </div>
 
@@ -23,20 +23,20 @@ import MainLayout from '../layouts/MainLayout.astro';
     </section>
 
     <section>
-      <div class="mb-3 flex items-center justify-between">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 class="section-label">Fornecedores</h2>
         <div class="flex gap-2">
           <input
             id="filter-fornecedor"
             type="text"
             placeholder="Filtrar por fornecedor…"
-            class="field w-56 border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+            class="field w-full border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none sm:w-56"
           />
         </div>
       </div>
-      <div class="data-panel overflow-hidden">
-        <table class="min-w-full divide-y divide-slate-200 text-sm">
-          <thead class="bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      <div class="data-panel overflow-x-auto">
+        <table class="min-w-[760px] divide-y divide-slate-200 text-[clamp(0.72rem,0.5vw+0.62rem,0.86rem)]">
+          <thead class="bg-slate-50/80 text-left text-[clamp(0.62rem,0.5vw+0.46rem,0.72rem)] font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th class="px-4 py-3">Fornecedor</th>
               <th class="px-4 py-3">Venda Líquida</th>
@@ -94,7 +94,7 @@ import MainLayout from '../layouts/MainLayout.astro';
               .map(
                 (f: any) => `
               <a href="/fornecedores/detalhe?fornecedor=${encodeURIComponent(f.fornecedor)}"
-                 class="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm hover:bg-amber-100 transition-colors">
+                 class="flex flex-col gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm transition-colors hover:bg-amber-100 sm:flex-row sm:items-center sm:justify-between sm:px-4">
                 <span class="font-medium text-amber-900">⚠ ${f.fornecedor}</span>
                 <span class="text-amber-700">${f.alerta.totalDivergencias} divergência(s) · ${f.alerta.notasAusentes} ausente(s)</span>
               </a>`,
@@ -143,9 +143,9 @@ import MainLayout from '../layouts/MainLayout.astro';
 
   function metric(label: string, value: string, warning = false) {
     return `
-      <div class="metric-card rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${label}</p>
-        <p class="mt-2 text-2xl font-semibold ${warning ? 'text-amber-600' : 'text-slate-900'}">${value}</p>
+      <div class="metric-card min-w-0 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <p class="text-[clamp(0.62rem,0.5vw+0.48rem,0.74rem)] font-medium uppercase tracking-wide text-slate-500">${label}</p>
+        <p class="mt-2 break-words text-[clamp(1.05rem,2.7vw,1.6rem)] font-semibold ${warning ? 'text-amber-600' : 'text-slate-900'}">${value}</p>
       </div>`;
   }
 

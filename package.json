@@ -13,5 +13,10 @@
     "build:backend": "npm run build --workspace backend",
     "build:frontend": "npm run build --workspace frontend",
     "test:backend": "npm run test --workspace backend"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "esbuild@0.28.2": true,
+    "sharp@0.33.5": true
   }
 }
