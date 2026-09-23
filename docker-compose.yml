@@ -1,11 +1,22 @@
 services:
-  backend:
+  app:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    command: >
+      sh -c "
+      cd /app/backend && node dist/backend/src/server.js &
+      cd /app/frontend && npm run dev -- --host 0.0.0.0 --port 3027
+      "
+    ports:
+      - '3026:3026'
+      - '3027:3027'
     environment:
       PORT: '3026'
       NODE_ENV: production
+      BACKEND_URL: http://localhost:3026
+      HOST: 0.0.0.0
+      PORT_FRONT: '3027'
       SANKHYA_API_URL: ${SANKHYA_API_URL}
       SANKHYA_SERVICE_URL: ${SANKHYA_SERVICE_URL}
       SANKHYA_X_TOKEN: ${SANKHYA_X_TOKEN}
@@ -18,16 +29,4 @@ services:
       SMTP_SECURE: ${SMTP_SECURE:-false}
     volumes:
       - ./backend/data:/app/backend/data
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    environment:
-      BACKEND_URL: http://backend:3026
-      HOST: 0.0.0.0
-      PORT: '3027'
-    depends_on:
-      - backend
     restart: unless-stopped
