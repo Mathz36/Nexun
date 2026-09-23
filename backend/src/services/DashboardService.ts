@@ -1,4 +1,4 @@
-import { reportRepository } from '../repositories';
+import { executionRepository, reportRepository } from '../repositories';
 import { ReportService } from './ReportService';
 import { comparisonService } from './ComparisonService';
 import { Report, StoredReportRecord } from '../../../shared/types/report-record';
@@ -23,6 +23,7 @@ export interface SupplierSummary {
   quantidade: number;
   operacoes: OperationSummary[];
   relatorios: Array<{ id: string; nome: string; tipo: string; totalRegistros: number }>;
+  ultimoHorarioSincronizacao: string | null;
   alerta: SupplierAlert;
 }
 
@@ -94,11 +95,27 @@ export class DashboardService {
     return { ...result, fornecedor };
   }
 
+  private async getLastSupplierSyncAt(reports: Report[]): Promise<string | null> {
+    if (reports.length === 0) return null;
+
+    const reportIds = new Set(reports.map((report) => report.id));
+    const executions = await executionRepository.findBy(
+      (execution) => execution.status === 'SUCCESS' && reportIds.has(execution.reportId),
+    );
+
+    if (executions.length === 0) return null;
+    return executions.reduce((latest, current) =>
+      current.dataHora > latest.dataHora ? current : latest,
+    ).dataHora;
+  }
+
   private async buildSupplierSummary(fornecedor: string, reports: Report[]): Promise<SupplierSummary> {
     const recordsByReport = new Map<string, StoredReportRecord[]>();
     for (const report of reports) {
       recordsByReport.set(report.id, await this.reportService.getLatestRecords(report.id));
     }
+
+    const ultimoHorarioSincronizacao = await this.getLastSupplierSyncAt(reports);
 
     // Consolidação usa o PRIMEIRO relatório ativo como fonte "oficial" de
     // totais (evita somar em duplicidade quando há múltiplos relatórios
@@ -144,6 +161,7 @@ export class DashboardService {
         tipo: r.tipo,
         totalRegistros: recordsByReport.get(r.id)?.length ?? 0,
       })),
+      ultimoHorarioSincronizacao,
       alerta,
     };
   }

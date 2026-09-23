@@ -12,6 +12,10 @@
     "dev:frontend": "npm run dev --workspace frontend",
     "build:backend": "npm run build --workspace backend",
     "build:frontend": "npm run build --workspace frontend",
+    "start:backend": "npm run start --workspace backend",
+    "start:frontend": "npm run preview --workspace frontend",
+    "dev": "bash -lc 'for p in 3026 3027 3028 3029; do ids=$(lsof -t -iTCP:$p -sTCP:LISTEN 2>/dev/null || true); if [ -n \"$ids\" ]; then kill -9 $ids; fi; done; npm run dev:backend & npm run dev:frontend'",
+    "start": "npm run build:backend && npm run build:frontend && (npm run start:backend > /tmp/nexun-backend.log 2>&1 &) && npm run start:frontend",
     "test:backend": "npm run test --workspace backend"
   },
   "allowScripts": {

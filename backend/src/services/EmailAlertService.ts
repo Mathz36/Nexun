@@ -24,6 +24,7 @@ export class EmailAlertService {
     }
     const updated = await emailAlertRepository.update(SETTINGS_ID, {
       enabled: input.enabled,
+      alertType: input.alertType,
       senderEmail: input.senderEmail,
       recipientEmail: input.recipientEmail,
       password: input.password || current.password,
@@ -57,34 +58,51 @@ export class EmailAlertService {
     const settings = await this.getStoredSettings();
     if (!settings.enabled) return false;
 
-    const suppliers = data.fornecedores.filter(
-      (supplier) => supplier.alerta.status === 'DIVERGENCIA',
-    );
-    if (suppliers.length === 0) return false;
+    const suppliers = settings.alertType === 'DIVERGENCIA'
+      ? data.fornecedores.filter((supplier) => supplier.alerta.status === 'DIVERGENCIA')
+      : data.fornecedores;
+    if (settings.alertType === 'DIVERGENCIA' && suppliers.length === 0) return false;
 
     const executionDate = executionAt ? new Date(executionAt) : new Date();
     const executionDateLabel = executionDate.toLocaleString('pt-BR');
     const comparisonBySupplier = new Map(comparisons.map((item) => [item.fornecedor, item.comparison]));
-    const detailSections = suppliers.map((supplier) => {
+    const detailSections = suppliers.length > 0 ? suppliers.map((supplier) => {
       const comparison = comparisonBySupplier.get(supplier.fornecedor);
-      if (!comparison) return '';
+      if (!comparison) return `
+        <div style="margin:28px 0 10px;padding:14px 16px;border-left:3px solid #7dd3fc;background:#111827;border-radius:8px;">
+          <h3 style="margin:0 0 6px;color:#f1eaff;font-size:17px;">${escapeHtml(supplier.fornecedor)}</h3>
+          <p style="margin:0;color:#dbeafe;font-size:15px;">Resumo: fornecedor sem divergência detectada na sincronização atual.</p>
+        </div>`;
+
+      const hasIssue = comparison.linhas.some((line) => line.status !== 'OK');
       const reportHeaders = comparison.resumo.relatorios
         .map((report) => `<th colspan="4" style="padding:12px 10px;background:#24183d;color:#d9c7ff;border-left:1px solid #4b3670;font-size:11px;letter-spacing:1px;text-transform:uppercase;">${escapeHtml(report.reportName)}</th>`)
         .join('');
       const subHeaders = comparison.resumo.relatorios
         .map(() => '<th style="padding:9px 10px;background:#18132b;color:#a99cc8;border-left:1px solid #30264c;font-size:10px;text-align:left;">NF</th><th style="padding:9px 10px;background:#18132b;color:#a99cc8;font-size:10px;text-align:left;">Operação</th><th style="padding:9px 10px;background:#18132b;color:#a99cc8;font-size:10px;text-align:left;">Líquido</th><th style="padding:9px 10px;background:#18132b;color:#a99cc8;font-size:10px;text-align:left;">Bruto</th>')
         .join('');
+
+      if (!hasIssue) {
+        return `
+          <div style="margin:28px 0 10px;padding:14px 16px;border-left:3px solid #7dd3fc;background:#111827;border-radius:8px;">
+            <h3 style="margin:0 0 6px;color:#f1eaff;font-size:17px;">${escapeHtml(supplier.fornecedor)}</h3>
+            <p style="margin:0;color:#dbeafe;font-size:15px;">Resumo: sincronização correta. Valor total: <strong>${formatCurrency(supplier.vendaLiquida)}</strong> · Quantidade: <strong>${supplier.quantidade}</strong> · Notas: <strong>${supplier.totalNotas}</strong>.</p>
+          </div>`;
+      }
+
       const rows = comparison.linhas
         .filter((line) => line.status !== 'OK')
         .map((line) => {
           const rowBackground = line.status === 'AUSENTE' ? '#2a1524' : '#2a2110';
           const rowColor = line.status === 'AUSENTE' ? '#ff9fba' : '#ffe08a';
+          const statusLabel = line.status === 'AUSENTE' ? 'Ausente' : 'Divergente';
           const values = line.valores.map((value) => `
             <td style="padding:11px 10px;border-left:1px solid #30264c;color:#e7e2f2;font-family:Consolas,monospace;">${escapeHtml(value.nf ?? '—')}</td>
             <td style="padding:11px 10px;color:#e7e2f2;">${escapeHtml(value.operacao ?? '—')}</td>
             <td style="padding:11px 10px;color:#e7e2f2;">${value.valorLiquido === null ? '—' : formatCurrency(value.valorLiquido)}</td>
             <td style="padding:11px 10px;color:#e7e2f2;">${value.valorBruto === null ? '—' : formatCurrency(value.valorBruto)}</td>`).join('');
-          return `<tr style="background:${rowBackground};border-top:1px solid #59415f;"><td style="display:none;"></td>${values}<td style="padding:11px 10px;color:#b7abc9;font-size:12px;">${escapeHtml(line.divergencias.join(', ') || 'Nota ausente')}</td><td style="padding:11px 10px;color:${rowColor};font-weight:700;white-space:nowrap;">${line.status === 'AUSENTE' ? 'Ausente' : 'Divergente'}</td></tr>`;
+          const reason = escapeHtml(line.divergencias.join(', ') || 'Nota ausente');
+          return `<tr style="background:${rowBackground};border-top:1px solid #59415f;"><td style="display:none;"></td>${values}<td style="padding:11px 10px;color:#b7abc9;font-size:12px;">${reason}</td><td style="padding:11px 10px;color:${rowColor};font-weight:700;white-space:nowrap;">${statusLabel}</td></tr>`;
         })
         .join('');
       return `
@@ -98,20 +116,28 @@ export class EmailAlertService {
           <tbody>${rows || '<tr><td colspan="99" style="padding:20px;color:#57f2b0;text-align:center;">Nenhuma ocorrência detalhada.</td></tr>'}</tbody>
         </table>
         </div>`;
-    }).join('');
+    }).join('') : `<div style="margin:28px 0 10px;padding:14px 16px;border-left:3px solid #7dd3fc;background:#111827;border-radius:8px;"><p style="margin:0;color:#dbeafe;font-size:16px;">Nenhuma divergência foi identificada nesta execução, mas o aviso foi enviado conforme a configuração.</p></div>`;
+
+    const subject = settings.alertType === 'DIVERGENCIA'
+      ? `Nexun: divergências encontradas na execução de ${executionDateLabel}`
+      : `Nexun: execução concluída em ${executionDateLabel}`;
+
+    const title = settings.alertType === 'DIVERGENCIA'
+      ? 'Alerta de divergências'
+      : 'Resumo da sincronização';
 
     try {
       const transporter = this.createTransporter(settings);
       await transporter.sendMail({
         from: settings.senderEmail,
         to: settings.recipientEmail,
-        subject: `Nexun: divergências encontradas na execução de ${executionDateLabel}`,
+        subject,
         html: `
           <div style="margin:0;background:#0b0a16;color:#e7e2f2;font-family:Arial,sans-serif;">
             <div style="max-width:1180px;margin:0 auto;padding:28px 24px 34px;">
               <div style="padding:18px 20px;border:1px solid #40345e;border-radius:8px;background:#151329;">
                 <p style="margin:0 0 8px;color:#b879ff;font-family:Consolas,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;">NEXUN / ALERT CENTER</p>
-                <h2 style="margin:0;color:#ffffff;font-size:24px;">Alerta de divergências</h2>
+                <h2 style="margin:0;color:#ffffff;font-size:24px;">${title}</h2>
                 <p style="margin:12px 0 0;color:#b9afca;font-size:14px;line-height:1.6;">Dados encontrados na última execução da sincronização, realizada em <strong style="color:#55d6ff;">${executionDateLabel}</strong>.</p>
               </div>
               ${detailSections}
@@ -139,10 +165,19 @@ export class EmailAlertService {
 
   private async getStoredSettings(): Promise<EmailAlertSettings> {
     const current = await emailAlertRepository.findById(SETTINGS_ID);
-    if (current) return current;
+    if (current) {
+      if (!current.alertType) {
+        const migrated = await emailAlertRepository.update(SETTINGS_ID, {
+          alertType: 'DIVERGENCIA',
+        });
+        return migrated ?? { ...current, alertType: 'DIVERGENCIA' };
+      }
+      return current;
+    }
     return emailAlertRepository.insert({
       id: SETTINGS_ID,
       enabled: false,
+      alertType: 'DIVERGENCIA',
       senderEmail: '',
       recipientEmail: '',
       password: '',

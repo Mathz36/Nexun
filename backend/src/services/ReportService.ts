@@ -8,7 +8,18 @@ import {
   CreateReportInput,
   UpdateReportInput,
 } from '../../../shared/schemas/report.schemas';
-import { Report, ReportRecord, StoredReportRecord } from '../../../shared/types/report-record';
+import { Report, ReportRecord, ReportSchedule, StoredReportRecord } from '../../../shared/types/report-record';
+
+const defaultReportSchedule = (): ReportSchedule => ({
+  enabled: false,
+  mode: 'INTERVAL',
+  intervalMinutes: 60,
+  dayOfMonth: 2,
+  time: '08:00',
+  lastRunAt: null,
+  lastSuccessAt: null,
+  lastError: null,
+});
 
 export interface QueryPreview {
   columns: string[];
@@ -41,6 +52,10 @@ export class ReportService {
       tipo: input.tipo,
       query: input.query,
       ativo: input.ativo ?? true,
+      schedule: {
+        ...defaultReportSchedule(),
+        ...(input.schedule ?? {}),
+      },
       createdAt: now,
       updatedAt: now,
     };
@@ -48,8 +63,18 @@ export class ReportService {
   }
 
   async update(id: string, input: UpdateReportInput): Promise<Report> {
+    const current = await this.getById(id);
+    const nextSchedule = input.schedule
+      ? {
+          ...defaultReportSchedule(),
+          ...current.schedule,
+          ...input.schedule,
+        }
+      : current.schedule;
+
     const updated = await reportRepository.update(id, {
       ...input,
+      schedule: nextSchedule,
       updatedAt: new Date().toISOString(),
     } as Partial<Report>);
     if (!updated) throw new AppError('REPORT_NOT_FOUND', 404);

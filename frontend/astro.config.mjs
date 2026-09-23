@@ -7,10 +7,24 @@ import tailwind from '@astrojs/tailwind';
 export default defineConfig({
   integrations: [tailwind()],
   server: {
+    host: '0.0.0.0',
     port: 3027,
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 3027,
+    strictPort: true,
   },
   vite: {
     server: {
+      proxy: {
+        '/api': {
+          target: process.env.BACKEND_URL ?? 'http://localhost:3026',
+          changeOrigin: true,
+        },
+      },
+    },
+    preview: {
       proxy: {
         '/api': {
           target: process.env.BACKEND_URL ?? 'http://localhost:3026',

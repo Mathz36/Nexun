@@ -45,58 +45,6 @@ import MainLayout from '../../layouts/MainLayout.astro';
     </div>
 
     <div class="data-panel p-6">
-      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Sincronização automática
-      </h2>
-      <p class="mb-4 text-sm text-slate-600">
-        Executa as queries dos relatórios ativos no ERP e atualiza os dados usados pelo Dashboard.
-      </p>
-      <div class="space-y-4 text-sm">
-        <label class="flex items-center gap-2 text-slate-700">
-          <input id="sync-enabled" type="checkbox" class="rounded border-slate-300" />
-          Ativar sincronização automática
-        </label>
-        <label class="block text-slate-700">
-          Modo de sincronização
-          <select id="sync-mode" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
-            <option value="INTERVAL">Intervalo fixo</option>
-            <option value="MONTHLY">Mensal</option>
-          </select>
-        </label>
-        <label id="sync-interval-field" class="block text-slate-700">
-          Intervalo entre sincronizações
-          <select id="sync-interval" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
-            <option value="5">A cada 5 minutos</option>
-            <option value="15">A cada 15 minutos</option>
-            <option value="30">A cada 30 minutos</option>
-            <option value="60">A cada 1 hora</option>
-            <option value="360">A cada 6 horas</option>
-            <option value="1440">Uma vez por dia</option>
-          </select>
-        </label>
-        <div id="sync-monthly-fields" class="hidden grid-cols-1 gap-3 sm:grid-cols-2">
-          <label class="block text-slate-700">
-            Dia do mês
-            <input id="sync-day" type="number" min="1" max="28" value="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
-          </label>
-          <label class="block text-slate-700">
-            Horário
-            <input id="sync-time" type="time" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
-          </label>
-        </div>
-        <div class="flex gap-2">
-          <button id="btn-save-sync" class="flex-1 rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700">
-            Salvar agendamento
-          </button>
-          <button id="btn-run-sync" class="flex-1 rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50">
-            Sincronizar agora
-          </button>
-        </div>
-        <p id="sync-status" class="text-xs text-slate-500">Carregando configuração…</p>
-      </div>
-    </div>
-
-    <div class="data-panel p-6">
       <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
         Alertas por e-mail
       </h2>
@@ -107,6 +55,13 @@ import MainLayout from '../../layouts/MainLayout.astro';
         <label class="flex items-center gap-2 text-slate-700">
           <input id="email-alert-enabled" type="checkbox" class="rounded border-slate-300" />
           Ativar alertas
+        </label>
+        <label class="block text-slate-700">
+          Tipo de aviso
+          <select id="email-alert-type" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+            <option value="DIVERGENCIA">Divergência</option>
+            <option value="TODOS">Todos</option>
+          </select>
         </label>
         <div class="grid gap-3 md:grid-cols-2">
           <label class="block text-slate-700">
@@ -147,17 +102,8 @@ import MainLayout from '../../layouts/MainLayout.astro';
   const btn = document.getElementById('btn-test-connection') as HTMLButtonElement;
   const authStatus = document.getElementById('auth-status')!;
   const lastCheck = document.getElementById('last-check')!;
-  const syncEnabled = document.getElementById('sync-enabled') as HTMLInputElement;
-  const syncMode = document.getElementById('sync-mode') as HTMLSelectElement;
-  const syncInterval = document.getElementById('sync-interval') as HTMLSelectElement;
-  const syncIntervalField = document.getElementById('sync-interval-field')!;
-  const syncMonthlyFields = document.getElementById('sync-monthly-fields')!;
-  const syncDay = document.getElementById('sync-day') as HTMLInputElement;
-  const syncTime = document.getElementById('sync-time') as HTMLInputElement;
-  const saveSync = document.getElementById('btn-save-sync') as HTMLButtonElement;
-  const runSync = document.getElementById('btn-run-sync') as HTMLButtonElement;
-  const syncStatus = document.getElementById('sync-status')!;
   const emailEnabled = document.getElementById('email-alert-enabled') as HTMLInputElement;
+  const emailAlertType = document.getElementById('email-alert-type') as HTMLSelectElement;
   const emailSender = document.getElementById('email-sender') as HTMLInputElement;
   const emailRecipient = document.getElementById('email-recipient') as HTMLInputElement;
   const emailPassword = document.getElementById('email-password') as HTMLInputElement;
@@ -171,33 +117,9 @@ import MainLayout from '../../layouts/MainLayout.astro';
     return value ? new Date(value).toLocaleString('pt-BR') : 'nunca';
   }
 
-  function renderSyncStatus(schedule: any) {
-    syncEnabled.checked = schedule.enabled;
-    syncMode.value = schedule.mode ?? 'INTERVAL';
-    syncInterval.value = String(schedule.intervalMinutes);
-    syncDay.value = String(schedule.dayOfMonth ?? 2);
-    syncTime.value = schedule.time ?? '08:00';
-    updateScheduleFields();
-    syncStatus.textContent = schedule.lastError
-      ? `Último erro: ${schedule.lastError}`
-      : `Última execução: ${formatDate(schedule.lastRunAt)} · Último sucesso: ${formatDate(schedule.lastSuccessAt)}`;
-  }
-
-  function updateScheduleFields() {
-    const monthly = syncMode.value === 'MONTHLY';
-    syncIntervalField.classList.toggle('hidden', monthly);
-    syncMonthlyFields.classList.toggle('hidden', !monthly);
-    syncMonthlyFields.classList.toggle('grid', monthly);
-  }
-
-  syncMode.addEventListener('change', updateScheduleFields);
-
-  api.sync.get().then(renderSyncStatus).catch((err) => {
-    syncStatus.textContent = `Erro ao carregar agendamento: ${(err as Error).message}`;
-  });
-
   function renderEmailSettings(settings: any) {
     emailEnabled.checked = settings.enabled;
+    emailAlertType.value = settings.alertType ?? 'DIVERGENCIA';
     emailSender.value = settings.senderEmail;
     emailRecipient.value = settings.recipientEmail;
     emailPasswordStatus.textContent = settings.passwordConfigured
@@ -219,6 +141,7 @@ import MainLayout from '../../layouts/MainLayout.astro';
     try {
       const settings = await api.emailAlert.update({
         enabled: emailEnabled.checked,
+        alertType: emailAlertType.value as 'DIVERGENCIA' | 'TODOS',
         senderEmail: emailSender.value.trim(),
         recipientEmail: emailRecipient.value.trim(),
         password: emailPassword.value || undefined,
@@ -267,46 +190,6 @@ import MainLayout from '../../layouts/MainLayout.astro';
     } finally {
       sendEmail.disabled = false;
       sendEmail.textContent = 'Enviar alerta agora';
-    }
-  });
-
-  saveSync.addEventListener('click', async () => {
-    saveSync.disabled = true;
-    try {
-      const schedule = await api.sync.update({
-        enabled: syncEnabled.checked,
-        mode: syncMode.value as 'INTERVAL' | 'MONTHLY',
-        intervalMinutes: Number(syncInterval.value),
-        dayOfMonth: Number(syncDay.value),
-        time: syncTime.value,
-      });
-      renderSyncStatus(schedule);
-      window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Agendamento salvo.' } }));
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('toast', { detail: { message: (err as Error).message, type: 'error' } }));
-    } finally {
-      saveSync.disabled = false;
-    }
-  });
-
-  runSync.addEventListener('click', async () => {
-    runSync.disabled = true;
-    runSync.textContent = 'Sincronizando…';
-    try {
-      const result = await api.sync.runNow();
-      renderSyncStatus(result.schedule);
-      const errors = result.results.filter((item) => item.error).length;
-      window.dispatchEvent(new CustomEvent('toast', {
-        detail: {
-          message: errors ? `Sincronização concluída com ${errors} erro(s).` : 'Sincronização concluída.',
-          type: errors ? 'error' : 'success',
-        },
-      }));
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('toast', { detail: { message: (err as Error).message, type: 'error' } }));
-    } finally {
-      runSync.disabled = false;
-      runSync.textContent = 'Sincronizar agora';
     }
   });
 

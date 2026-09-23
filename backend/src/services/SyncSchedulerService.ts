@@ -6,6 +6,7 @@ import { SyncSchedule } from '../../../shared/types/sync-schedule';
 import { UpdateSyncScheduleInput } from '../../../shared/schemas/sync-schedule.schemas';
 import { DashboardService } from './DashboardService';
 import { EmailAlertService } from './EmailAlertService';
+import { Report, ReportSchedule } from '../../../shared/types/report-record';
 
 const SCHEDULE_ID = 'default';
 
@@ -22,7 +23,6 @@ export class SyncSchedulerService {
   async getSchedule(): Promise<SyncSchedule> {
     const current = await syncScheduleRepository.findById(SCHEDULE_ID);
     if (current) {
-      // Migra a configuração criada antes do suporte a agendamento mensal.
       if (!current.mode || !current.dayOfMonth || !current.time) {
         const migrated = await syncScheduleRepository.update(SCHEDULE_ID, {
           mode: 'INTERVAL',
@@ -53,7 +53,6 @@ export class SyncSchedulerService {
   }
 
   async updateSchedule(input: UpdateSyncScheduleInput): Promise<SyncSchedule> {
-    const schedule = await this.getSchedule();
     const updated = await syncScheduleRepository.update(SCHEDULE_ID, {
       ...input,
       lastError: null,
@@ -133,12 +132,123 @@ export class SyncSchedulerService {
   }
 
   start(): void {
-    void this.getSchedule().then((schedule) => this.restartTimer(schedule));
+    this.stop();
+    this.timer = setInterval(() => {
+      void this.checkDueReports().catch((err) => {
+        logger.error('Falha ao verificar relatórios agendados', {
+          service: 'SyncSchedulerService',
+          operation: 'checkDueReports',
+          error: err instanceof Error ? err.message : 'Erro desconhecido',
+        });
+      });
+    }, 60_000);
+    void this.checkDueReports();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  private async checkDueReports(): Promise<void> {
+    const reports = await this.reportService.list();
+    const dueReports = reports.filter((report) => report.ativo && this.isReportDue(report));
+
+    for (const report of dueReports) {
+      await this.runReportBySchedule(report);
+    }
+  }
+
+  private async runReportBySchedule(report: Report): Promise<void> {
+    if (this.running) return;
+
+    const schedule = this.normalizeSchedule(report.schedule);
+    const startedAt = new Date().toISOString();
+
+    try {
+      await this.reportService.update(report.id, {
+        schedule: { ...schedule, lastRunAt: startedAt, lastError: null },
+      });
+      await this.reportService.execute(report.id);
+
+      const dashboard = await this.dashboardService.getDashboard();
+      const comparisons = await Promise.all(
+        dashboard.fornecedores
+          .filter((supplier) => supplier.alerta.status === 'DIVERGENCIA')
+          .map(async (supplier) => ({
+            fornecedor: supplier.fornecedor,
+            comparison: await this.dashboardService.getSupplierComparison(supplier.fornecedor),
+          })),
+      );
+
+      await this.emailAlertService.sendDivergenceAlert(
+        dashboard,
+        comparisons.filter((item): item is { fornecedor: string; comparison: NonNullable<typeof item.comparison> } => Boolean(item.comparison)),
+        startedAt,
+      );
+
+      await this.reportService.update(report.id, {
+        schedule: { ...schedule, lastRunAt: startedAt, lastSuccessAt: new Date().toISOString(), lastError: null },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Falha na execução do relatório agendado';
+      await this.reportService.update(report.id, {
+        schedule: { ...schedule, lastRunAt: startedAt, lastSuccessAt: schedule.lastSuccessAt, lastError: message },
+      });
+      logger.error('Falha ao executar relatório agendado', {
+        service: 'SyncSchedulerService',
+        operation: 'runReportBySchedule',
+        reportId: report.id,
+        error: message,
+      });
+    }
+  }
+
+  private isReportDue(report: Report): boolean {
+    const schedule = this.normalizeSchedule(report.schedule);
+    if (!schedule.enabled) return false;
+
+    const now = new Date();
+    const [hours, minutes] = schedule.time.split(':').map(Number);
+
+    if (schedule.mode === 'MONTHLY') {
+      if (now.getDate() !== schedule.dayOfMonth) return false;
+      if (now.getHours() < hours || (now.getHours() === hours && now.getMinutes() < minutes)) return false;
+      if (!schedule.lastRunAt) return true;
+      const lastRun = new Date(schedule.lastRunAt);
+      return lastRun.getFullYear() !== now.getFullYear() || lastRun.getMonth() !== now.getMonth();
+    }
+
+    const timeMinutes = hours * 60 + minutes;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    if (nowMinutes < timeMinutes) return false;
+
+    if (schedule.intervalMinutes >= 1440) {
+      if (!schedule.lastRunAt) return true;
+      const lastRun = new Date(schedule.lastRunAt);
+      const sameDay = lastRun.toDateString() === now.toDateString();
+      return !sameDay;
+    }
+
+    const intervalMs = schedule.intervalMinutes * 60_000;
+    if (!schedule.lastRunAt) return true;
+    const lastRun = new Date(schedule.lastRunAt);
+    return now.getTime() - lastRun.getTime() >= intervalMs;
+  }
+
+  private normalizeSchedule(schedule?: Partial<ReportSchedule> | null): ReportSchedule {
+    return {
+      enabled: false,
+      mode: 'INTERVAL',
+      intervalMinutes: 60,
+      dayOfMonth: 2,
+      time: '08:00',
+      lastRunAt: null,
+      lastSuccessAt: null,
+      lastError: null,
+      ...schedule,
+    };
   }
 
   private restartTimer(schedule: SyncSchedule): void {

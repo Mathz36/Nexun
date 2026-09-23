@@ -28,6 +28,17 @@ export type OperationType =
   | 'Bonificação Ent'
   | (string & {});
 
+export interface ReportSchedule {
+  enabled: boolean;
+  mode: 'INTERVAL' | 'MONTHLY';
+  intervalMinutes: number;
+  dayOfMonth: number;
+  time: string;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+}
+
 export interface Report {
   id: string;
   nome: string;
@@ -36,6 +47,7 @@ export interface Report {
   tipo: ReportType;
   query: string;
   ativo: boolean;
+  schedule: ReportSchedule;
   createdAt: string;
   updatedAt: string;
 }

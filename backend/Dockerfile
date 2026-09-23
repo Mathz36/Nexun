@@ -16,5 +16,5 @@ COPY --from=build /app/backend/node_modules backend/node_modules
 COPY --from=build /app/backend/dist backend/dist
 COPY --from=build /app/backend/package.json backend/package.json
 WORKDIR /app/backend
-EXPOSE 3333
+EXPOSE 3026
 CMD ["node", "dist/backend/src/server.js"]

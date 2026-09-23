@@ -1,27 +1,34 @@
 version: '3.9'
 
-# Sem serviço de banco de dados: o backend persiste em arquivos JSON
-# (./backend/data), montados como volume para persistir entre reinícios.
-
 services:
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    container_name: nexun-backend
     ports:
       - '3026:3026'
     env_file:
       - backend/.env
+    environment:
+      PORT: '3026'
+      NODE_ENV: production
     volumes:
       - ./backend/data:/app/backend/data
+    restart: unless-stopped
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    container_name: nexun-frontend
     ports:
       - '3027:3027'
     environment:
-      - BACKEND_URL=http://backend:3026
+      BACKEND_URL: http://backend:3026
+      HOST: 0.0.0.0
+      PORT: '3027'
     depends_on:
       - backend
+    restart: unless-stopped
+    command: sh -c "npm install && npm run dev --workspace frontend -- --host 0.0.0.0 --port 3027"

@@ -15,6 +15,17 @@ export const REQUIRED_COLUMNS = [
 
 export const reportTypeSchema = z.string().min(1, 'Tipo é obrigatório');
 
+export const reportScheduleSchema = z.object({
+  enabled: z.boolean().default(false),
+  mode: z.enum(['INTERVAL', 'MONTHLY']).default('INTERVAL'),
+  intervalMinutes: z.coerce.number().int().min(1).max(1440).default(60),
+  dayOfMonth: z.coerce.number().int().min(1).max(28).default(2),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário inválido. Use HH:mm.').default('08:00'),
+  lastRunAt: z.string().nullable().optional(),
+  lastSuccessAt: z.string().nullable().optional(),
+  lastError: z.string().nullable().optional(),
+});
+
 export const createReportSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório').max(200),
   descricao: z.string().max(1000).nullable().optional(),
@@ -26,6 +37,7 @@ export const createReportSchema = z.object({
   tipo: reportTypeSchema,
   query: z.string().min(1, 'Query é obrigatória'),
   ativo: z.boolean().default(true),
+  schedule: reportScheduleSchema.optional(),
 });
 
 export const updateReportSchema = createReportSchema.partial();

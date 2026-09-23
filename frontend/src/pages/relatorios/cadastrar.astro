@@ -50,6 +50,59 @@ import MainLayout from '../../layouts/MainLayout.astro';
         </div>
       </div>
 
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-slate-700">Agendamento da sincronização</p>
+            <p class="text-xs text-slate-500">Cada relatório pode ter seu próprio cronograma.</p>
+          </div>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input id="report-schedule-enabled" type="checkbox" class="rounded border-slate-300" />
+            Ativar
+          </label>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="block text-sm text-slate-700">
+            Modo
+            <select id="report-schedule-mode" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="INTERVAL">Intervalo fixo</option>
+              <option value="MONTHLY">Mensal</option>
+            </select>
+          </label>
+
+          <label id="report-schedule-interval-field" class="block text-sm text-slate-700">
+            Intervalo
+            <select id="report-schedule-interval" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="5">A cada 5 minutos</option>
+              <option value="15">A cada 15 minutos</option>
+              <option value="30">A cada 30 minutos</option>
+              <option value="60">A cada 1 hora</option>
+              <option value="360">A cada 6 horas</option>
+              <option value="1440">Uma vez por dia</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="report-schedule-time-field" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-1">
+          <label class="block text-sm text-slate-700">
+            Horário do dia
+            <input id="report-schedule-time" type="time" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
+
+        <div id="report-schedule-monthly-fields" class="mt-4 hidden grid-cols-1 gap-4 md:grid-cols-2">
+          <label class="block text-sm text-slate-700">
+            Dia do mês
+            <input id="report-schedule-day" type="number" min="1" max="28" value="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block text-sm text-slate-700">
+            Horário
+            <input id="report-schedule-time-monthly" type="time" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
+      </div>
+
       <div>
         <label class="mb-1 block text-sm font-medium text-slate-700">Descrição</label>
         <textarea
@@ -119,6 +172,25 @@ import MainLayout from '../../layouts/MainLayout.astro';
   const resultBox = document.getElementById('test-result')!;
   const editingReportId = new URLSearchParams(window.location.search).get('id');
   const queryField = form.elements.namedItem('query') as HTMLTextAreaElement;
+  const scheduleEnabled = document.getElementById('report-schedule-enabled') as HTMLInputElement;
+  const scheduleMode = document.getElementById('report-schedule-mode') as HTMLSelectElement;
+  const scheduleInterval = document.getElementById('report-schedule-interval') as HTMLSelectElement;
+  const scheduleIntervalField = document.getElementById('report-schedule-interval-field')!;
+  const scheduleTimeField = document.getElementById('report-schedule-time-field')!;
+  const scheduleMonthlyFields = document.getElementById('report-schedule-monthly-fields')!;
+  const scheduleDay = document.getElementById('report-schedule-day') as HTMLInputElement;
+  const scheduleTime = document.getElementById('report-schedule-time') as HTMLInputElement;
+  const scheduleTimeMonthly = document.getElementById('report-schedule-time-monthly') as HTMLInputElement;
+
+  function updateScheduleFields() {
+    const monthly = scheduleMode.value === 'MONTHLY';
+    scheduleIntervalField.classList.toggle('hidden', monthly);
+    scheduleTimeField.classList.toggle('hidden', monthly);
+    scheduleMonthlyFields.classList.toggle('hidden', !monthly);
+    scheduleMonthlyFields.classList.toggle('grid', monthly);
+  }
+
+  scheduleMode.addEventListener('change', updateScheduleFields);
 
   if (editingReportId) {
     document.title = 'Editar Relatório';
@@ -131,6 +203,15 @@ import MainLayout from '../../layouts/MainLayout.astro';
       (form.elements.namedItem('descricao') as HTMLTextAreaElement).value = report.descricao ?? '';
       queryField.value = report.query;
       (form.elements.namedItem('ativo') as HTMLInputElement).checked = report.ativo;
+
+      scheduleEnabled.checked = report.schedule?.enabled ?? false;
+      scheduleMode.value = report.schedule?.mode ?? 'INTERVAL';
+      scheduleInterval.value = String(report.schedule?.intervalMinutes ?? 60);
+      scheduleDay.value = String(report.schedule?.dayOfMonth ?? 2);
+      const selectedTime = report.schedule?.time ?? '08:00';
+      scheduleTime.value = selectedTime;
+      scheduleTimeMonthly.value = selectedTime;
+      updateScheduleFields();
     }).catch((err) => {
       toast((err as Error).message, 'error');
     });
@@ -206,6 +287,7 @@ import MainLayout from '../../layouts/MainLayout.astro';
     const formData = new FormData(form);
 
     try {
+      const selectedTime = scheduleMode.value === 'MONTHLY' ? scheduleTimeMonthly.value : scheduleTime.value;
       const input = {
         nome: String(formData.get('nome')),
         fornecedor: String(formData.get('fornecedor')),
@@ -213,6 +295,16 @@ import MainLayout from '../../layouts/MainLayout.astro';
         descricao: String(formData.get('descricao') || '') || null,
         query: String(formData.get('query')),
         ativo: formData.get('ativo') === 'on',
+        schedule: {
+          enabled: scheduleEnabled.checked,
+          mode: scheduleMode.value as 'INTERVAL' | 'MONTHLY',
+          intervalMinutes: Number(scheduleInterval.value),
+          dayOfMonth: Number(scheduleDay.value),
+          time: selectedTime,
+          lastRunAt: null,
+          lastSuccessAt: null,
+          lastError: null,
+        },
       } as any;
 
       if (editingReportId) {

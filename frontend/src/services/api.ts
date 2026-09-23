@@ -113,7 +113,7 @@ export const api = {
 
   emailAlert: {
     get: () => request<any>('/email-alert'),
-    update: (input: { enabled: boolean; senderEmail: string; recipientEmail: string; password?: string }) =>
+    update: (input: { enabled: boolean; alertType: 'DIVERGENCIA' | 'TODOS'; senderEmail: string; recipientEmail: string; password?: string }) =>
       request<any>('/email-alert', { method: 'PUT', body: JSON.stringify(input) }),
     test: () => request<{ ok: boolean }>('/email-alert/test', { method: 'POST' }),
     sendNow: () => request<{ sent: boolean }>('/email-alert/send-now', { method: 'POST' }),

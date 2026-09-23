@@ -1,6 +1,9 @@
+export type EmailAlertType = 'DIVERGENCIA' | 'TODOS';
+
 export interface EmailAlertSettings {
   id: string;
   enabled: boolean;
+  alertType: EmailAlertType;
   senderEmail: string;
   recipientEmail: string;
   password: string;
