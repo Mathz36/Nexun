@@ -9,8 +9,8 @@ services:
       cd /app/frontend && npm run dev -- --host 0.0.0.0 --port 3027
       "
     ports:
-      - '3026'
-      - '3027'
+      - '3026:3026'
+      - '3027:3027'
     environment:
       PORT: '3026'
       NODE_ENV: production
