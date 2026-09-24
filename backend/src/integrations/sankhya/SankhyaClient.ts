@@ -36,6 +36,10 @@ export class SankhyaClient {
   /** POST autenticado ao serviço configurado (DbExplorer ou outro serviço
    * MGE), com retry único em caso de 401 (token invalidado e renovado). */
   async post<T>(body: unknown, options?: { retried?: boolean }): Promise<T> {
+    if (!this.config.authUrl || !this.config.serviceUrl || !this.config.clientId || !this.config.clientSecret) {
+      throw new AppError('SANKHYA_NOT_CONFIGURED', 503);
+    }
+
     const token = await this.auth.getToken();
 
     const requestConfig: AxiosRequestConfig = {

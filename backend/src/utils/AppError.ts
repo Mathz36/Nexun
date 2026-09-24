@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'SANKHYA_QUERY_ERROR'
   | 'SANKHYA_INVALID_RESPONSE'
   | 'SANKHYA_RATE_LIMIT'
+  | 'SANKHYA_NOT_CONFIGURED'
   | 'REPORT_INVALID_SCHEMA'
   | 'REPORT_NOT_FOUND'
   | 'REPORT_EXECUTION_ERROR'
@@ -25,6 +26,7 @@ const FRIENDLY_MESSAGES: Record<ErrorCode, string> = {
   SANKHYA_QUERY_ERROR: 'A Sankhya retornou um erro ao executar a query.',
   SANKHYA_INVALID_RESPONSE: 'A resposta da Sankhya veio em um formato inesperado.',
   SANKHYA_RATE_LIMIT: 'Limite de requisições à Sankhya atingido. Tente novamente em instantes.',
+  SANKHYA_NOT_CONFIGURED: 'A integração com a Sankhya ainda não está configurada.',
   REPORT_INVALID_SCHEMA: 'A query não respeita o contrato de colunas obrigatórias.',
   REPORT_NOT_FOUND: 'Relatório não encontrado.',
   REPORT_EXECUTION_ERROR: 'Não foi possível executar o relatório.',

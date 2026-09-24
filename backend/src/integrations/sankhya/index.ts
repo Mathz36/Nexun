@@ -2,9 +2,11 @@ import { SankhyaClient } from './SankhyaClient';
 import { SankhyaDbExplorerService } from './SankhyaDbExplorerService';
 
 function requireEnv(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`Variável de ambiente obrigatória ausente: ${name}`);
+    // A app pode subir sem credenciais Sankhya; a integração só passa a funcionar
+    // quando o ambiente real for preenchido no EasyPanel ou .env do host.
+    return '';
   }
   return value;
 }
