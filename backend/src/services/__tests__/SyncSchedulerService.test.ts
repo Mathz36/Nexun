@@ -115,4 +115,53 @@ describe('SyncSchedulerService', () => {
 
     expect(emailAlertService.sendDivergenceAlert).toHaveBeenCalledTimes(1);
   });
+
+  it('dispara alerta agendado por fornecedor quando o horário do fornecedor está devido', async () => {
+    const reportService = {} as any;
+    const dashboardService = {
+      getDashboard: vi.fn().mockResolvedValue({
+        fornecedores: [{
+          fornecedor: 'MOURAGRO',
+          alerta: { status: 'DIVERGENCIA', totalDivergencias: 1, notasAusentes: 0, diferencaTotalValor: 25 },
+        }],
+      }),
+      getSupplierComparison: vi.fn().mockResolvedValue({ linhas: [{ status: 'DIVERGENCIA' }] }),
+    };
+
+    const emailAlertService = {
+      getSupplierSchedule: vi.fn().mockResolvedValue({
+        enabled: true,
+        mode: 'INTERVAL',
+        intervalMinutes: 1440,
+        dayOfMonth: 2,
+        time: '07:00',
+        lastRunAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+        lastSuccessAt: null,
+        lastError: null,
+      }),
+      sendSupplierDivergenceAlert: vi.fn().mockResolvedValue(true),
+      updateSupplierSchedule: vi.fn().mockResolvedValue({
+        enabled: true,
+        mode: 'INTERVAL',
+        intervalMinutes: 1440,
+        dayOfMonth: 2,
+        time: '07:00',
+        lastRunAt: new Date().toISOString(),
+        lastSuccessAt: new Date().toISOString(),
+        lastError: null,
+      }),
+    };
+
+    const service = new SyncSchedulerService(reportService, dashboardService as any, emailAlertService as any);
+
+    await (service as any).checkDueSupplierAlerts();
+
+    expect(emailAlertService.sendSupplierDivergenceAlert).toHaveBeenCalledTimes(1);
+    expect(emailAlertService.sendSupplierDivergenceAlert).toHaveBeenCalledWith(
+      'MOURAGRO',
+      expect.any(Object),
+      expect.any(Object),
+      expect.any(String),
+    );
+  });
 });

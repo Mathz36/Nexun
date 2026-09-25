@@ -141,8 +141,16 @@ export class SyncSchedulerService {
           error: err instanceof Error ? err.message : 'Erro desconhecido',
         });
       });
+      void this.checkDueSupplierAlerts().catch((err) => {
+        logger.error('Falha ao verificar alertas agendados por fornecedor', {
+          service: 'SyncSchedulerService',
+          operation: 'checkDueSupplierAlerts',
+          error: err instanceof Error ? err.message : 'Erro desconhecido',
+        });
+      });
     }, 60_000);
     void this.checkDueReports();
+    void this.checkDueSupplierAlerts();
   }
 
   stop(): void {
@@ -156,6 +164,51 @@ export class SyncSchedulerService {
 
     for (const report of dueReports) {
       await this.runReportBySchedule(report);
+    }
+  }
+
+  private async checkDueSupplierAlerts(): Promise<void> {
+    const dashboard = await this.dashboardService.getDashboard();
+    const supplierSchedules = typeof this.emailAlertService.getSupplierSchedules === 'function'
+      ? await this.emailAlertService.getSupplierSchedules()
+      : Object.fromEntries(await Promise.all(
+        dashboard.fornecedores.map(async (supplier) => {
+          if (typeof this.emailAlertService.getSupplierSchedule !== 'function') return [supplier.fornecedor.trim().toUpperCase(), null];
+          return [supplier.fornecedor.trim().toUpperCase(), await this.emailAlertService.getSupplierSchedule(supplier.fornecedor)];
+        }),
+      ));
+
+    for (const supplier of dashboard.fornecedores) {
+      const key = supplier.fornecedor.trim().toUpperCase();
+      const schedule = supplierSchedules[key] ?? {
+        enabled: false,
+        mode: 'INTERVAL',
+        intervalMinutes: 1440,
+        dayOfMonth: 2,
+        time: '07:00',
+        lastRunAt: null,
+        lastSuccessAt: null,
+        lastError: null,
+      };
+
+      if (!schedule.enabled || !this.isScheduleDue(schedule)) continue;
+
+      const comparison = await this.dashboardService.getSupplierComparison(supplier.fornecedor);
+      if (!comparison) continue;
+
+      const startedAt = new Date().toISOString();
+      const sent = typeof this.emailAlertService.sendSupplierDivergenceAlert === 'function'
+        ? await this.emailAlertService.sendSupplierDivergenceAlert(supplier.fornecedor, dashboard, comparison, startedAt)
+        : false;
+
+      if (typeof this.emailAlertService.updateSupplierSchedule !== 'function') continue;
+      const nextSchedule = {
+        ...schedule,
+        lastRunAt: startedAt,
+        lastSuccessAt: sent ? new Date().toISOString() : schedule.lastSuccessAt,
+        lastError: sent ? null : 'Falha ao enviar alerta por fornecedor',
+      };
+      await this.emailAlertService.updateSupplierSchedule(supplier.fornecedor, nextSchedule);
     }
   }
 
@@ -206,6 +259,10 @@ export class SyncSchedulerService {
 
   private isReportDue(report: Report): boolean {
     const schedule = this.normalizeSchedule(report.schedule);
+    return this.isScheduleDue(schedule);
+  }
+
+  private isScheduleDue(schedule: Pick<ReportSchedule, 'enabled' | 'mode' | 'intervalMinutes' | 'dayOfMonth' | 'time' | 'lastRunAt'>): boolean {
     if (!schedule.enabled) return false;
 
     const now = new Date();

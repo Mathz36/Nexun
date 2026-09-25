@@ -4,7 +4,7 @@ import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { DashboardData } from './DashboardService';
 import { UpdateEmailAlertInput } from '../../../shared/schemas/email-alert.schemas';
-import { EmailAlertSettings, EmailAlertSettingsPublic } from '../../../shared/types/email-alert';
+import { EmailAlertSettings, EmailAlertSettingsPublic, SupplierAlertSchedule } from '../../../shared/types/email-alert';
 import { ComparisonResult } from '../../../shared/types/comparison';
 
 const SETTINGS_ID = 'default';
@@ -50,6 +50,34 @@ export class EmailAlertService {
     }
   }
 
+  async getSupplierSchedule(supplier: string): Promise<SupplierAlertSchedule> {
+    const normalizedName = this.normalizeSupplierKey(supplier);
+    const settings = await this.getStoredSettings();
+    return this.normalizeSupplierSchedule(settings.supplierSchedules?.[normalizedName] ?? this.defaultSupplierSchedule());
+  }
+
+  async getSupplierSchedules(): Promise<Record<string, SupplierAlertSchedule>> {
+    const settings = await this.getStoredSettings();
+    return Object.fromEntries(
+      Object.entries(settings.supplierSchedules ?? {}).map(([supplier, schedule]) => [this.normalizeSupplierKey(supplier), this.normalizeSupplierSchedule(schedule)]),
+    );
+  }
+
+  async updateSupplierSchedule(supplier: string, input: Partial<SupplierAlertSchedule>): Promise<SupplierAlertSchedule> {
+    const normalizedName = this.normalizeSupplierKey(supplier);
+    const settings = await this.getStoredSettings();
+    const current = this.normalizeSupplierSchedule(settings.supplierSchedules?.[normalizedName] ?? this.defaultSupplierSchedule());
+    const next = this.normalizeSupplierSchedule({ ...current, ...input });
+    const updated = await emailAlertRepository.update(SETTINGS_ID, {
+      supplierSchedules: {
+        ...(settings.supplierSchedules ?? {}),
+        [normalizedName]: next,
+      },
+    });
+    if (!updated) throw new AppError('INTERNAL_ERROR', 500);
+    return next;
+  }
+
   async sendDivergenceAlert(
     data: DashboardData,
     comparisons: Array<{ fornecedor: string; comparison: ComparisonResult }>,
@@ -63,11 +91,37 @@ export class EmailAlertService {
       : data.fornecedores;
     if (settings.alertType === 'DIVERGENCIA' && suppliers.length === 0) return false;
 
+    return this.sendAlertBatch(settings, data, suppliers, comparisons, executionAt);
+  }
+
+  async sendSupplierDivergenceAlert(
+    supplierName: string,
+    data: DashboardData,
+    comparison: ComparisonResult,
+    executionAt?: string | null,
+  ): Promise<boolean> {
+    const settings = await this.getStoredSettings();
+    if (!settings.enabled) return false;
+
+    const normalizedName = this.normalizeSupplierKey(supplierName);
+    const supplier = data.fornecedores.find((item) => this.normalizeSupplierKey(item.fornecedor) === normalizedName);
+    if (!supplier) return false;
+
+    return this.sendAlertBatch(settings, data, [supplier], [{ fornecedor: supplier.fornecedor, comparison }], executionAt);
+  }
+
+  private async sendAlertBatch(
+    settings: EmailAlertSettings,
+    data: DashboardData,
+    suppliers: DashboardData['fornecedores'],
+    comparisons: Array<{ fornecedor: string; comparison: ComparisonResult }>,
+    executionAt?: string | null,
+  ): Promise<boolean> {
     const executionDate = executionAt ? new Date(executionAt) : new Date();
     const executionDateLabel = executionDate.toLocaleString('pt-BR');
-    const comparisonBySupplier = new Map(comparisons.map((item) => [item.fornecedor, item.comparison]));
+    const comparisonBySupplier = new Map(comparisons.map((item) => [this.normalizeSupplierKey(item.fornecedor), item.comparison]));
     const detailSections = suppliers.length > 0 ? suppliers.map((supplier) => {
-      const comparison = comparisonBySupplier.get(supplier.fornecedor);
+      const comparison = comparisonBySupplier.get(this.normalizeSupplierKey(supplier.fornecedor));
       if (!comparison) return `
         <div style="margin:28px 0 10px;padding:14px 16px;border-left:3px solid #7dd3fc;background:#111827;border-radius:8px;">
           <h3 style="margin:0 0 6px;color:#f1eaff;font-size:17px;">${escapeHtml(supplier.fornecedor)}</h3>
@@ -181,9 +235,41 @@ export class EmailAlertService {
       senderEmail: '',
       recipientEmail: '',
       password: '',
+      supplierSchedules: {},
       lastSentAt: null,
       lastError: null,
     });
+  }
+
+  private defaultSupplierSchedule(): SupplierAlertSchedule {
+    return {
+      enabled: false,
+      mode: 'INTERVAL',
+      intervalMinutes: 1440,
+      dayOfMonth: 2,
+      time: '07:00',
+      lastRunAt: null,
+      lastSuccessAt: null,
+      lastError: null,
+    };
+  }
+
+  private normalizeSupplierSchedule(schedule?: Partial<SupplierAlertSchedule> | null): SupplierAlertSchedule {
+    return {
+      enabled: false,
+      mode: 'INTERVAL',
+      intervalMinutes: 1440,
+      dayOfMonth: 2,
+      time: '07:00',
+      lastRunAt: null,
+      lastSuccessAt: null,
+      lastError: null,
+      ...schedule,
+    };
+  }
+
+  private normalizeSupplierKey(supplier: string): string {
+    return supplier.trim().toUpperCase();
   }
 
   private createTransporter(settings: EmailAlertSettings): Transporter {
