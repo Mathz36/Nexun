@@ -115,6 +115,34 @@ export const api = {
     get: () => request<any>('/email-alert'),
     update: (input: { enabled: boolean; alertType: 'DIVERGENCIA' | 'TODOS'; senderEmail: string; recipientEmail: string; password?: string }) =>
       request<any>('/email-alert', { method: 'PUT', body: JSON.stringify(input) }),
+    getSupplierSchedules: () => request<Record<string, {
+      enabled: boolean;
+      mode: 'INTERVAL' | 'MONTHLY';
+      intervalMinutes: number;
+      dayOfMonth: number;
+      time: string;
+      lastRunAt: string | null;
+      lastSuccessAt: string | null;
+      lastError: string | null;
+    }>>('/email-alert/suppliers'),
+    getSupplierSchedule: (supplier: string) => request<{
+      enabled: boolean;
+      mode: 'INTERVAL' | 'MONTHLY';
+      intervalMinutes: number;
+      dayOfMonth: number;
+      time: string;
+      lastRunAt: string | null;
+      lastSuccessAt: string | null;
+      lastError: string | null;
+    }>(`/email-alert/suppliers/${encodeURIComponent(supplier)}`),
+    updateSupplierSchedule: (supplier: string, input: {
+      enabled: boolean;
+      mode: 'INTERVAL' | 'MONTHLY';
+      intervalMinutes: number;
+      dayOfMonth: number;
+      time: string;
+    }) =>
+      request<any>(`/email-alert/suppliers/${encodeURIComponent(supplier)}`, { method: 'PUT', body: JSON.stringify(input) }),
     test: () => request<{ ok: boolean }>('/email-alert/test', { method: 'POST' }),
     sendNow: () => request<{ sent: boolean }>('/email-alert/send-now', { method: 'POST' }),
   },

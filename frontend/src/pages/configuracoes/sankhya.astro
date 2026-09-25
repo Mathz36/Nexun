@@ -45,12 +45,19 @@ import MainLayout from '../../layouts/MainLayout.astro';
     </div>
 
     <div class="data-panel p-6">
-      <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Alertas por e-mail
-      </h2>
-      <p class="mb-4 text-sm text-slate-600">
-        Envia automaticamente um resumo das divergências encontradas após cada sincronização.
-      </p>
+      <div class="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Alertas por e-mail
+          </h2>
+          <p class="text-sm text-slate-600">
+            Envia automaticamente um resumo das divergências encontradas após cada sincronização.
+          </p>
+        </div>
+        <a href="/configuracoes/email" class="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-700 hover:bg-brand-100">
+          Agendamento por fornecedor
+        </a>
+      </div>
       <div class="space-y-4 text-sm">
         <label class="flex items-center gap-2 text-slate-700">
           <input id="email-alert-enabled" type="checkbox" class="rounded border-slate-300" />

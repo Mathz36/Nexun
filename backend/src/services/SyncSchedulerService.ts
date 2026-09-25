@@ -76,20 +76,7 @@ export class SyncSchedulerService {
     try {
       const results = await this.reportService.executeAllActive();
       const errors = results.filter((result) => result.error);
-      const dashboard = await this.dashboardService.getDashboard();
-      const comparisons = await Promise.all(
-        dashboard.fornecedores
-          .filter((supplier) => supplier.alerta.status === 'DIVERGENCIA')
-          .map(async (supplier) => ({
-            fornecedor: supplier.fornecedor,
-            comparison: await this.dashboardService.getSupplierComparison(supplier.fornecedor),
-          })),
-      );
-      await this.emailAlertService.sendDivergenceAlert(
-        dashboard,
-        comparisons.filter((item): item is { fornecedor: string; comparison: NonNullable<typeof item.comparison> } => Boolean(item.comparison)),
-        startedAt,
-      );
+      await this.dashboardService.getDashboard();
       const updated = await syncScheduleRepository.update(SCHEDULE_ID, {
         lastSuccessAt: errors.length === 0 ? new Date().toISOString() : schedule.lastSuccessAt,
         lastError: errors.length > 0 ? `${errors.length} relatório(s) falharam.` : null,
@@ -224,21 +211,7 @@ export class SyncSchedulerService {
       });
       await this.reportService.execute(report.id);
 
-      const dashboard = await this.dashboardService.getDashboard();
-      const comparisons = await Promise.all(
-        dashboard.fornecedores
-          .filter((supplier) => supplier.alerta.status === 'DIVERGENCIA')
-          .map(async (supplier) => ({
-            fornecedor: supplier.fornecedor,
-            comparison: await this.dashboardService.getSupplierComparison(supplier.fornecedor),
-          })),
-      );
-
-      await this.emailAlertService.sendDivergenceAlert(
-        dashboard,
-        comparisons.filter((item): item is { fornecedor: string; comparison: NonNullable<typeof item.comparison> } => Boolean(item.comparison)),
-        startedAt,
-      );
+      await this.dashboardService.getDashboard();
 
       await this.reportService.update(report.id, {
         schedule: { ...schedule, lastRunAt: startedAt, lastSuccessAt: new Date().toISOString(), lastError: null },

@@ -75,7 +75,7 @@ describe('SyncSchedulerService', () => {
     expect((service as any).isReportDue(report)).toBe(true);
   });
 
-  it('envia alerta quando um relatório agendado executa com divergência', async () => {
+  it('não envia alerta automaticamente quando um relatório agendado executa', async () => {
     const reportService = {
       update: vi.fn().mockResolvedValue({}),
       execute: vi.fn().mockResolvedValue({ executionId: 'exec-1', recordCount: 10 }),
@@ -113,7 +113,7 @@ describe('SyncSchedulerService', () => {
       },
     } as any);
 
-    expect(emailAlertService.sendDivergenceAlert).toHaveBeenCalledTimes(1);
+    expect(emailAlertService.sendDivergenceAlert).not.toHaveBeenCalled();
   });
 
   it('dispara alerta agendado por fornecedor quando o horário do fornecedor está devido', async () => {

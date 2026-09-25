@@ -1,0 +1,203 @@
+---
+import MainLayout from '../../layouts/MainLayout.astro';
+---
+
+<MainLayout title="Agendamento de e-mail por fornecedor" active="config">
+  <div class="mx-auto w-full max-w-6xl space-y-6">
+    <div class="mb-1">
+      <a href="/configuracoes/sankhya" class="text-sm text-brand-600 hover:underline">&larr; Voltar para configurações gerais</a>
+      <p class="mt-2 text-sm text-slate-600">
+        Cada fornecedor pode ter seu próprio horário de envio. O sistema envia um único e-mail com a diferença daquele fornecedor.
+      </p>
+    </div>
+
+    <div class="data-panel p-6">
+      <div class="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Envio agendado</h2>
+          <p class="text-xs text-slate-400">Os dados ficam no backend e o disparo é feito automaticamente conforme o horário configurado.</p>
+        </div>
+        <button id="btn-refresh-suppliers" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+          Recarregar fornecedores
+        </button>
+      </div>
+
+      <div id="supplier-schedules" class="space-y-4"></div>
+      <p id="supplier-status" class="mt-4 text-xs text-slate-500">Carregando fornecedores…</p>
+    </div>
+  </div>
+</MainLayout>
+
+<script>
+  import { api } from '../../services/api';
+
+  type SupplierSchedule = {
+    enabled: boolean;
+    mode: 'INTERVAL' | 'MONTHLY';
+    intervalMinutes: number;
+    dayOfMonth: number;
+    time: string;
+    lastRunAt: string | null;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+  };
+
+  const container = document.getElementById('supplier-schedules')!;
+  const status = document.getElementById('supplier-status')!;
+  const refreshButton = document.getElementById('btn-refresh-suppliers') as HTMLButtonElement;
+
+  const defaultSchedule = (): SupplierSchedule => ({
+    enabled: false,
+    mode: 'INTERVAL',
+    intervalMinutes: 1440,
+    dayOfMonth: 2,
+    time: '07:00',
+    lastRunAt: null,
+    lastSuccessAt: null,
+    lastError: null,
+  });
+
+  function formatStatus(schedule: SupplierSchedule) {
+    if (!schedule.enabled) return 'Desativado';
+    if (schedule.mode === 'MONTHLY') return `Mensal · dia ${schedule.dayOfMonth} às ${schedule.time}`;
+    return `Diário · ${schedule.time}`;
+  }
+
+  function renderSuppliers(suppliers: Array<{ fornecedor: string }>, schedules: Record<string, SupplierSchedule>) {
+    if (!suppliers.length) {
+      container.innerHTML = '<p class="text-sm text-slate-500">Nenhum fornecedor encontrado. Cadastre relatórios antes de agendar e-mails.</p>';
+      status.textContent = 'Nenhum fornecedor disponível.';
+      return;
+    }
+
+    container.innerHTML = suppliers.map((supplier) => {
+      const key = supplier.fornecedor.trim().toUpperCase();
+      const schedule = schedules[key] ?? defaultSchedule();
+      return `
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-card="${escapeHtml(supplier.fornecedor)}">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p class="text-lg font-semibold text-slate-900">${escapeHtml(supplier.fornecedor)}</p>
+              <p class="text-xs text-slate-500">${formatStatus(schedule)}</p>
+            </div>
+            <label class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <input type="checkbox" data-field="enabled" data-supplier="${escapeHtml(supplier.fornecedor)}" ${schedule.enabled ? 'checked' : ''} />
+              Ativar agendamento
+            </label>
+          </div>
+
+          <div class="mt-4 grid gap-3 md:grid-cols-4">
+            <label class="text-sm text-slate-700">
+              Modo
+              <select data-field="mode" data-supplier="${escapeHtml(supplier.fornecedor)}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                <option value="INTERVAL" ${schedule.mode === 'INTERVAL' ? 'selected' : ''}>Diário</option>
+                <option value="MONTHLY" ${schedule.mode === 'MONTHLY' ? 'selected' : ''}>Mensal</option>
+              </select>
+            </label>
+
+            <label class="text-sm text-slate-700">
+              Horário
+              <input type="time" data-field="time" data-supplier="${escapeHtml(supplier.fornecedor)}" value="${schedule.time}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+
+            <label class="text-sm text-slate-700">
+              Intervalo (min)
+              <input type="number" min="30" step="30" data-field="intervalMinutes" data-supplier="${escapeHtml(supplier.fornecedor)}" value="${schedule.intervalMinutes}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" ${schedule.mode === 'MONTHLY' ? 'disabled' : ''} />
+            </label>
+
+            <label class="text-sm text-slate-700">
+              Dia do mês
+              <input type="number" min="1" max="31" data-field="dayOfMonth" data-supplier="${escapeHtml(supplier.fornecedor)}" value="${schedule.dayOfMonth}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" ${schedule.mode === 'INTERVAL' ? 'disabled' : ''} />
+            </label>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between gap-3">
+            <p class="text-[11px] text-slate-400">
+              ${schedule.lastSuccessAt ? `Último envio: ${new Date(schedule.lastSuccessAt).toLocaleString('pt-BR')}` : 'Nenhum envio registrado ainda.'}
+            </p>
+            <button data-save="${escapeHtml(supplier.fornecedor)}" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+              Salvar fornecedor
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    document.querySelectorAll('[data-field="mode"]').forEach((select) => {
+      select.addEventListener('change', (event) => {
+        const target = event.currentTarget as HTMLSelectElement;
+        const card = target.closest('[data-card]') as HTMLElement;
+        const supplier = target.dataset.supplier ?? '';
+        const intervalInput = card.querySelector(`[data-field="intervalMinutes"][data-supplier="${supplier}"]`) as HTMLInputElement;
+        const dayInput = card.querySelector(`[data-field="dayOfMonth"][data-supplier="${supplier}"]`) as HTMLInputElement;
+        const isMonthly = target.value === 'MONTHLY';
+        intervalInput.disabled = isMonthly;
+        dayInput.disabled = !isMonthly;
+      });
+    });
+
+    status.textContent = `${suppliers.length} fornecedor(es) com agendamento disponível.`;
+  }
+
+  function escapeHtml(value: string) {
+    return value.replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    }[char] as string));
+  }
+
+  async function loadSettings() {
+    status.textContent = 'Carregando fornecedores…';
+    try {
+      const [suppliers, settings] = await Promise.all([
+        api.dashboard.listSuppliers(),
+        api.emailAlert.get().catch(() => ({ supplierSchedules: {} })),
+      ]) as [Array<{ fornecedor: string }>, { supplierSchedules?: Record<string, SupplierSchedule> }];
+
+      renderSuppliers(suppliers, settings.supplierSchedules ?? {});
+    } catch (error) {
+      status.textContent = `Erro ao carregar fornecedores: ${(error as Error).message}`;
+      container.innerHTML = '<p class="text-sm text-red-600">Não foi possível carregar os fornecedores para agendamento.</p>';
+    }
+  }
+
+  document.addEventListener('click', async (event) => {
+    const button = (event.target as HTMLElement).closest('[data-save]') as HTMLButtonElement | null;
+    if (!button) return;
+
+    const supplier = button.dataset.save ?? '';
+    const card = document.querySelector(`[data-card="${escapeHtml(supplier)}"]`) as HTMLElement | null;
+    if (!card || !supplier) return;
+
+    const payload = {
+      enabled: (card.querySelector(`[data-field="enabled"][data-supplier="${escapeHtml(supplier)}"]`) as HTMLInputElement).checked,
+      mode: (card.querySelector(`[data-field="mode"][data-supplier="${escapeHtml(supplier)}"]`) as HTMLSelectElement).value as 'INTERVAL' | 'MONTHLY',
+      intervalMinutes: Number((card.querySelector(`[data-field="intervalMinutes"][data-supplier="${escapeHtml(supplier)}"]`) as HTMLInputElement).value || 1440),
+      dayOfMonth: Number((card.querySelector(`[data-field="dayOfMonth"][data-supplier="${escapeHtml(supplier)}"]`) as HTMLInputElement).value || 2),
+      time: (card.querySelector(`[data-field="time"][data-supplier="${escapeHtml(supplier)}"]`) as HTMLInputElement).value || '07:00',
+    };
+
+    button.disabled = true;
+    button.textContent = 'Salvando…';
+
+    try {
+      await api.emailAlert.updateSupplierSchedule(supplier, payload);
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: `Agendamento salvo para ${supplier}.` } }));
+      await loadSettings();
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: (error as Error).message, type: 'error' } }));
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Salvar fornecedor';
+    }
+  });
+
+  refreshButton.addEventListener('click', () => {
+    void loadSettings();
+  });
+
+  void loadSettings();
+</script>

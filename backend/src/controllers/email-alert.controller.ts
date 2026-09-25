@@ -14,6 +14,17 @@ export function createEmailAlertController(
     update: asyncHandler(async (req: Request, res: Response) => {
       res.json({ data: await service.updateSettings(req.body) });
     }),
+    getSupplierSchedules: asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ data: await service.getSupplierSchedules() });
+    }),
+    getSupplierSchedule: asyncHandler(async (req: Request, res: Response) => {
+      const supplier = decodeURIComponent(req.params.supplier);
+      res.json({ data: await service.getSupplierSchedule(supplier) });
+    }),
+    updateSupplierSchedule: asyncHandler(async (req: Request, res: Response) => {
+      const supplier = decodeURIComponent(req.params.supplier);
+      res.json({ data: await service.updateSupplierSchedule(supplier, req.body) });
+    }),
     test: asyncHandler(async (_req: Request, res: Response) => {
       await service.testConnection();
       res.json({ data: { ok: true } });
